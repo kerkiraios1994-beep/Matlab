@@ -262,4 +262,88 @@ async function studentHome(user){
  }catch(error){status.textContent="Πρόβλημα φόρτωσης προσωπικού προγράμματος: "+(error?.message||String(error))}
 }
 
-async function view(table){if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){try{let user=signedInUser;if(!user){const session=await Promise.race([supabase.auth.getSession(),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Ο έλεγχος σύνδεσης καθυστέρησε.")),12000))]);user=session.data?.session?.user;studentToken=session.data?.session?.access_token||studentToken;}if(!user){screen("auth");$("message").textContent="Δεν υπάρχει ενεργή σύνδεση. Δοκίμασε ξανά.";return}const result=await Promise.race([supabase.from("profiles").select("full_name,role,active").eq("id",user.id).maybeSingle(),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η φόρτωση του λογαριασμού καθυστέρησε.")),12000))]);if(result.error)throw result.error;if(!result.data?.active){screen("auth");$("message").textContent="Ο λογαριασμός δεν έχει ενεργό ρόλο. Επικοινώνησε με τη διαχείριση.";return}profile=result.data;screen("dashboard");$("profile").textContent=profile.full_name+" · "+({admin:"Διεύθυνση",teacher:"Καθηγητής",student:"Μαθητής",parent:"Γονέας"}[profile.role]);$("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):[]).map(([id,item])=>'<button class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");if(profile.role==="admin")view("students");else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή μαθητή</h2><p>Το περιβάλλον μαθητή είναι υπό ανάπτυξη.</p></div>'}catch(err){screen("auth");$("message").textContent="Πρόβλημα φόρτωσης: "+(err?.message||"Δοκίμασε ξανά.")}};$("nav").onclick=e=>{const id=e.target.dataset.tab;if(id&&profile?.role==="admin")view(id)};$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});start();</script></body></html>
+async function view(table){if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
+ try{
+  let user=signedInUser;
+  if(!user){
+   const s=await Promise.race([
+     supabase.auth.getSession(),
+     new Promise((_,reject)=>setTimeout(()=>reject(new Error("Ο έλεγχος σύνδεσης καθυστέρησε.")),12000))
+   ]);
+   if(s.error)throw s.error;
+   user=s.data?.session?.user;
+   studentToken=s.data?.session?.access_token||studentToken;
+  }
+  if(!user){
+   screen(inviteToken?"invitePanel":"auth");
+   if(!inviteToken)$("message").textContent="Δεν υπάρχει ενεργή σύνδεση. Κάνε είσοδο.";
+   return;
+  }
+  if(inviteToken&&!claimedInvite){
+   const p=await supabase.from("profiles").select("role,active").eq("id",user.id).maybeSingle();
+   if(p.error)throw p.error;
+   if(p.data && (p.data.role!=="student"||!p.data.active)){
+     screen("invitePanel");
+     $("inviteStatus").textContent="Έχεις ήδη συνδεθεί με λογαριασμό διαχείρισης ή διαφορετικού ρόλου. Αποσυνδέσου για να χρησιμοποιήσεις μαθητικό λογαριασμό.";
+     $("inviteExistingLogin").textContent="Αποσύνδεση για εγγραφή μαθητή";
+     return;
+   }
+   const bound=await supabase.from("students").select("id").eq("user_id",user.id).maybeSingle();
+   if(bound.error)throw bound.error;
+   if(!bound.data){
+     const m=user.user_metadata||{};
+     if(!m.mathlab_first_name||!m.mathlab_last_name||!m.mathlab_phone||!m.mathlab_grade){
+       screen("invitePanel");
+       const form=$("inviteSignupForm");
+       form.dataset.mode="claim";
+       form.elements.email.value=user.email||"";
+       form.elements.email.readOnly=true;
+       form.elements.password.required=false;
+       form.elements.password.disabled=true;
+       $("signupStudentBtn").textContent="Ενεργοποίηση πρόσκλησης";
+       $("inviteStatus").textContent="Είσαι συνδεδεμένος. Συμπλήρωσε όνομα, επίθετο, τηλέφωνο και τάξη για να ενεργοποιήσεις την πρόσκληση.";
+       return;
+     }
+     const claimed=await supabase.rpc("claim_mathlab_student_invite",{
+       p_token:inviteToken,
+       p_first_name:m.mathlab_first_name,
+       p_last_name:m.mathlab_last_name,
+       p_phone:m.mathlab_phone,
+       p_grade:m.mathlab_grade
+     });
+     if(claimed.error){
+       screen("invitePanel");
+       $("inviteStatus").textContent="Δεν ολοκληρώθηκε η ενεργοποίηση: "+claimed.error.message;
+       return;
+     }
+   }
+   claimedInvite=true;
+   history.replaceState(null,"",location.origin+location.pathname);
+  }
+  const result=await Promise.race([
+    supabase.from("profiles").select("full_name,role,active").eq("id",user.id).maybeSingle(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η φόρτωση του λογαριασμού καθυστέρησε.")),12000))
+  ]);
+  if(result.error)throw result.error;
+  if(!result.data?.active){
+    screen(inviteToken?"invitePanel":"auth");
+    const message="Ο λογαριασμός δεν έχει ακόμη ενεργοποιημένο ρόλο μαθητή.";
+    if(inviteToken)$("inviteStatus").textContent=message;
+    else $("message").textContent=message;
+    return;
+  }
+  profile=result.data;
+  screen("dashboard");
+  $("dashboard").querySelector("h1").textContent=profile.role==="admin"?"Πίνακας διαχείρισης":"Η προσωπική μου περιοχή";
+  $("profile").textContent=profile.full_name+" · "+({admin:"Διαχειριστής–Καθηγητής",teacher:"Καθηγητής",student:"Μαθητής",parent:"Γονέας"}[profile.role]||"Χρήστης");
+  $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
+  if(profile.role==="admin")view("students");
+  else if(profile.role==="student")studentHome(user);
+  else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή</h2><p>Δεν υπάρχουν δικαιώματα διαχείρισης.</p></div>';
+ }catch(err){
+   screen(inviteToken?"invitePanel":"auth");
+   const msg="Πρόβλημα σύνδεσης: "+(err?.message||String(err));
+   if(inviteToken)$("inviteStatus").textContent=msg;
+   else $("message").textContent=msg;
+ }
+};$("nav").onclick=e=>{const id=e.target.dataset.tab;if(id&&profile?.role==="admin")view(id)};$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});start();</script></body></html>
