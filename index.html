@@ -457,7 +457,7 @@ function studentMonthCalendar(lessons) {
 
 async function studentMessagesView(user){
  if(profile?.role!=="student")return;
- $("view").innerHTML='<div class="card"><h2>Τα μηνύματά μου</h2><p class="muted">Γράψε ένα μήνυμα στον καθηγητή σου. Μόνο εσύ και ο διαχειριστής μπορείτε να διαβάσετε αυτή τη συνομιλία.</p><button type="button" class="alt" id="studentMessagesReload">Ανανέωση μηνυμάτων</button><p id="studentMessageStatus" role="status"></p><div id="studentMessageHistory" class="chatHistory"></div><form id="studentMessageForm"><label for="studentMessageBody">Μήνυμα προς τον καθηγητή</label><textarea id="studentMessageBody" class="chatTextarea" name="body" maxlength="2000" required placeholder="Γράψε το μήνυμά σου..."></textarea><button type="submit">Αποστολή μηνύματος</button></form></div>';
+ $("view").innerHTML='<div class="card"><h2>Τα μηνύματά μου</h2><p class="muted">Στείλτε μήνυμα στην κυρία Φωτεινή. Μόνο εσύ και η κυρία Φωτεινή μπορείτε να διαβάσετε αυτή τη συνομιλία.</p><button type="button" class="alt" id="studentMessagesReload">Ανανέωση μηνυμάτων</button><p id="studentMessageStatus" role="status"></p><div id="studentMessageHistory" class="chatHistory"></div><form id="studentMessageForm"><label for="studentMessageBody">Μήνυμα προς την κυρία Φωτεινή</label><textarea id="studentMessageBody" class="chatTextarea" name="body" maxlength="2000" required placeholder="Γράψε το μήνυμά σου προς την κυρία Φωτεινή..."></textarea><button type="submit">Αποστολή μηνύματος</button></form></div>';
  const status=$("studentMessageStatus");
  try{
    const s=await supabase.from("students").select("id").eq("user_id",user.id).maybeSingle();
@@ -498,7 +498,7 @@ async function studentMessagesView(user){
          .select("id").single();
        if(added.error)throw added.error;
        form.reset();
-       status.textContent="Το μήνυμα στάλθηκε στον καθηγητή.";
+       status.textContent="Το μήνυμα στάλθηκε στην κυρία Φωτεινή.";
        await load();
      }catch(error){status.textContent="Δεν επιβεβαιώθηκε η αποστολή: "+(error?.message||String(error))}
      finally{if(button.isConnected)button.disabled=false}
@@ -508,43 +508,74 @@ async function studentMessagesView(user){
  }catch(error){status.textContent="Δεν φορτώθηκε η συνομιλία: "+(error?.message||String(error))}
 }
 
-async function studentHome(user){
- $("dashboard").querySelector("h1").textContent="Η προσωπική μου περιοχή";
- $("view").innerHTML='<div class="card"><h2>Το πρόγραμμά μου</h2><p id="personalStudentStatus" role="status">Φόρτωση μαθημάτων...</p><div id="myLessons"></div><div id="myTasks"></div><div id="myGrades"></div></div>';
+
+async function studentRecordFor(user){
+ if(profile?.role!=="student")throw new Error("Η ενότητα είναι διαθέσιμη μόνο σε μαθητές.");
+ const r=await supabase.from("students").select("id,full_name,grade").eq("user_id",user.id).maybeSingle();
+ if(r.error)throw r.error;
+ if(!r.data)throw new Error("Δεν έχει συνδεθεί μαθητική εγγραφή με αυτόν τον λογαριασμό.");
+ return r.data;
+}
+async function studentCalendarView(user){
+ if(profile?.role!=="student")return;
+ $("view").innerHTML='<div class="card"><h2>Ημερολόγιο</h2><p id="personalStudentStatus" role="status">Φόρτωση ημερολογίου...</p><div id="myLessons"></div></div>';
  const status=$("personalStudentStatus");
  try{
-   const s=await supabase.from("students").select("id,full_name,grade").eq("user_id",user.id).maybeSingle();
-   if(s.error)throw s.error;
-   if(!s.data){status.textContent="Δεν έχει συνδεθεί ακόμη μαθητική εγγραφή με τον λογαριασμό.";return}
-   status.textContent="Καλώς ήρθες, "+s.data.full_name+". Εδώ βλέπεις μόνο τα δικά σου μαθήματα.";
-   const ls=await supabase.from("lessons").select("lesson_date,lesson_time,subject").eq("student_id",s.data.id).order("lesson_date").order("lesson_time");
-   if(ls.error)throw ls.error;
-   studentMonthCalendar(ls.data||[]);
-   const [en,gr]=await Promise.all([
-     supabase.from("enrollments").select("class_id").eq("student_id",s.data.id),
-     supabase.from("grades").select("title,score,max_score,graded_at").eq("student_id",s.data.id).order("graded_at",{ascending:false})
-   ]);
-   const tasksNode=$("myTasks"),gradesNode=$("myGrades");
-   if(en.error){
-     tasksNode.innerHTML='<h3>Οι εργασίες μου</h3><p class="muted">Οι εργασίες δεν είναι διαθέσιμες αυτή τη στιγμή.</p>';
-   }else{
-     const classIds=(en.data||[]).map(x=>x.class_id);
-     let tasks=[];
-     if(classIds.length){
-       const a=await supabase.from("assignments").select("title,description,due_date").in("class_id",classIds).order("due_date");
-       if(a.error){
-         tasksNode.innerHTML='<h3>Οι εργασίες μου</h3><p class="muted">Οι εργασίες δεν φορτώθηκαν.</p>';
-       }else tasks=a.data||[];
-     }
-     if(!tasksNode.innerHTML)tasksNode.innerHTML='<h3>Οι εργασίες μου</h3>'+(tasks.length?'<ul>'+tasks.map(t=>'<li><strong>'+escapeHtml(t.title)+'</strong>'+(t.due_date?" — έως "+escapeHtml(t.due_date):"")+(t.description?" — "+escapeHtml(t.description):"")+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη εργασίες.</p>');
+   const student=await studentRecordFor(user);
+   const lessons=await supabase.from("lessons")
+     .select("lesson_date,lesson_time,subject").eq("student_id",student.id)
+     .order("lesson_date").order("lesson_time");
+   if(lessons.error)throw lessons.error;
+   if(!status.isConnected)return;
+   status.textContent="Το ημερολόγιο της "+student.grade+". Βλέπεις μόνο τα δικά σου μαθήματα.";
+   studentMonthCalendar(lessons.data||[]);
+ }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκε το ημερολόγιο: "+(error?.message||String(error))}
+}
+async function studentLessonsView(user){
+ if(profile?.role!=="student")return;
+ $("view").innerHTML='<div class="card"><h2>Τα μαθήματά μου</h2><p id="personalLessonsStatus" role="status">Φόρτωση...</p><div id="personalLessonsList"></div><div id="personalAssignments"></div></div>';
+ const status=$("personalLessonsStatus"),lessonsNode=$("personalLessonsList"),tasksNode=$("personalAssignments");
+ try{
+   const student=await studentRecordFor(user);
+   const result=await supabase.from("lessons")
+     .select("lesson_date,lesson_time,subject").eq("student_id",student.id)
+     .order("lesson_date",{ascending:true}).order("lesson_time",{ascending:true});
+   if(result.error)throw result.error;
+   if(!status.isConnected)return;
+   status.textContent="Τα προγραμματισμένα μαθήματά σου και οι εργασίες σου.";
+   const lessons=result.data||[];
+   lessonsNode.innerHTML='<h3>Προγραμματισμένα μαθήματα</h3>'+
+     (lessons.length?'<ul>'+lessons.map(l=>'<li><strong>'+escapeHtml(l.subject)+'</strong> — '+escapeHtml(l.lesson_date)+' στις '+escapeHtml(String(l.lesson_time).slice(0,5))+'</li>').join("")+'</ul>':'<p class="muted">Δεν έχουν καταχωριστεί ακόμη μαθήματα.</p>');
+   const enrolls=await supabase.from("enrollments").select("class_id").eq("student_id",student.id);
+   if(enrolls.error)throw enrolls.error;
+   const ids=(enrolls.data||[]).map(x=>x.class_id);
+   let tasks=[];
+   if(ids.length){
+     const work=await supabase.from("assignments")
+       .select("title,description,due_date").in("class_id",ids).order("due_date");
+     if(work.error)throw work.error;
+     tasks=work.data||[];
    }
-   if(gr.error){
-     gradesNode.innerHTML='<h3>Οι βαθμοί μου</h3><p class="muted">Οι βαθμοί δεν είναι διαθέσιμοι αυτή τη στιγμή.</p>';
-   }else{
-     const grades=gr.data||[];
-     gradesNode.innerHTML='<h3>Οι βαθμοί μου</h3>'+(grades.length?'<ul>'+grades.map(g=>'<li>'+escapeHtml(g.title)+" — "+escapeHtml(g.score)+" / "+escapeHtml(g.max_score)+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη βαθμοί.</p>');
-   }
- }catch(error){status.textContent="Πρόβλημα φόρτωσης προσωπικού προγράμματος: "+(error?.message||String(error))}
+   if(!tasksNode.isConnected)return;
+   tasksNode.innerHTML='<h3>Οι εργασίες μου</h3>'+
+     (tasks.length?'<ul>'+tasks.map(t=>'<li><strong>'+escapeHtml(t.title)+'</strong>'+(t.due_date?' — μέχρι '+escapeHtml(t.due_date):'')+(t.description?'<p>'+escapeHtml(t.description)+'</p>':'')+'</li>').join("")+'</ul>':'<p class="muted">Δεν υπάρχουν ακόμη εργασίες.</p>');
+ }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν όλα τα μαθήματα ή οι εργασίες: "+(error?.message||String(error))}
+}
+async function studentGradesView(user){
+ if(profile?.role!=="student")return;
+ $("view").innerHTML='<div class="card"><h2>Οι βαθμοί μου</h2><p id="personalGradesStatus" role="status">Φόρτωση βαθμολογιών...</p><div id="personalGradesList"></div></div>';
+ const status=$("personalGradesStatus"),list=$("personalGradesList");
+ try{
+   const student=await studentRecordFor(user);
+   const result=await supabase.from("grades")
+     .select("title,score,max_score,graded_at").eq("student_id",student.id)
+     .order("graded_at",{ascending:false});
+   if(result.error)throw result.error;
+   if(!status.isConnected)return;
+   status.textContent="Εδώ εμφανίζονται αποκλειστικά οι δικές σου βαθμολογίες.";
+   const grades=result.data||[];
+   list.innerHTML=grades.length?'<ul>'+grades.map(g=>'<li><strong>'+escapeHtml(g.title)+'</strong> — '+escapeHtml(g.score)+' / '+escapeHtml(g.max_score)+(g.graded_at?' · '+escapeHtml(g.graded_at):'')+'</li>').join("")+'</ul>':'<p class="muted">Δεν έχουν καταχωριστεί ακόμη βαθμοί.</p>';
+ }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
 }
 async function view(table){if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
@@ -621,9 +652,9 @@ async function view(table){if(table==="messages")return messagesView();if(table=
   $("nav").classList.remove("open");$("menuBackdrop").classList.add("hide");document.body.classList.remove("menuOpen");$("menuToggle").setAttribute("aria-expanded","false");
   $("dashboard").querySelector("h1").textContent=profile.role==="admin"?"Πίνακας διαχείρισης":"Η προσωπική μου περιοχή";
   $("profile").textContent=profile.full_name+" · "+({admin:"Διαχειριστής–Καθηγητής",teacher:"Καθηγητής",student:"Μαθητής",parent:"Γονέας"}[profile.role]||"Χρήστης");
-  $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):profile.role==="student"?[["studentCalendar",["Το πρόγραμμά μου",[]]],["studentMessages",["Μηνύματα",[]]]]:[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
+  $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):profile.role==="student"?[["studentCalendar",["Ημερολόγιο",[]]],["studentMessages",["Μηνύματα",[]]],["studentGrades",["Οι βαθμοί μου",[]]],["studentLessons",["Τα μαθήματά μου",[]]]]:[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
   if(profile.role==="admin"){setCurrentSection("students");view("students");refreshMessageBadge();}
-  else if(profile.role==="student"){setCurrentSection("studentCalendar");studentHome(user);}
+  else if(profile.role==="student"){setCurrentSection("studentCalendar");studentCalendarView(user);}
   else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή</h2><p>Δεν υπάρχουν δικαιώματα διαχείρισης.</p></div>';
  }catch(err){
    screen(inviteToken?"invitePanel":"auth");
@@ -635,11 +666,14 @@ async function view(table){if(table==="messages")return messagesView();if(table=
  const id=e.target?.dataset?.tab;
  if(!id)return;
  setMenuOpen(false);setCurrentSection(id);if(profile?.role==="admin"){view(id);return}
- if(profile?.role==="student"&&(id==="studentCalendar"||id==="studentMessages")){
+ if(profile?.role==="student"&&["studentCalendar","studentMessages","studentGrades","studentLessons"].includes(id)){
    const result=await supabase.auth.getUser();
    if(result.error||!result.data?.user){$("view").innerHTML='<div class="card">Η σύνδεση έληξε. Κάνε είσοδο ξανά.</div>';return}
-   if(id==="studentCalendar")studentHome(result.data.user);
-   else studentMessagesView(result.data.user);
+   const studentUser=result.data.user;
+   if(id==="studentCalendar")studentCalendarView(studentUser);
+   else if(id==="studentMessages")studentMessagesView(studentUser);
+   else if(id==="studentGrades")studentGradesView(studentUser);
+   else if(id==="studentLessons")studentLessonsView(studentUser);
  }
 };
 $("inviteSignupForm").onsubmit=async event=>{
