@@ -1154,6 +1154,88 @@ async function studentLessonsView(user){
    }
  }catch(err){learningStatusText(status,"Δεν φορτώθηκαν τα μαθήματα: "+(err?.message||String(err)))}
 }
+
+async function studentUploadDocumentPanel(studentId,unit,mount){
+ if(profile?.role!=="student"||!mount.isConnected)return;
+ const section=document.createElement("section");section.className="learningCard";
+ section.append(learningTextElement("h3","Ανέβασμα δικού μου εγγράφου"));
+ section.append(learningTextElement("p","Στείλε δικό σου PDF, φωτογραφία, Word, PowerPoint ή άλλο αρχείο στην κυρία Φωτεινή για έλεγχο. Μέχρι 50 MB ανά αρχείο.","learningHint"));
+ const fileInput=document.createElement("input");
+ fileInput.type="file";fileInput.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov";
+ fileInput.style.position="absolute";fileInput.style.width="1px";fileInput.style.height="1px";
+ fileInput.style.opacity="0";fileInput.style.pointerEvents="none";
+ fileInput.setAttribute("aria-label","Επιλογή εγγράφου από το κινητό");
+ const choose=document.createElement("button");choose.type="button";choose.className="alt";
+ choose.textContent="📎 Επιλογή αρχείου από το κινητό";
+ choose.onclick=()=>fileInput.click();
+ const chosen=learningTextElement("p","Δεν έχει επιλεγεί αρχείο.","learningHint");
+ fileInput.onchange=()=>{const file=fileInput.files?.[0];chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο."};
+ const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=3000;
+ comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή…";
+ const submit=document.createElement("button");submit.type="button";submit.textContent="Αποστολή εγγράφου";
+ const status=learningTextElement("p","","learningHint");status.setAttribute("role","status");
+ const list=document.createElement("div");
+ section.append(fileInput,choose,chosen,learningTextElement("label","Μήνυμα για το έγγραφο"),comment,submit,status,
+   learningTextElement("h4","Τα αρχεία που έχω στείλει"),list);
+ mount.append(section);
+ async function listMyUploads(){
+   const [sent,reviewed]=await Promise.all([
+     supabase.from("mathlab_learning_student_uploads")
+       .select("id,original_name,size_bytes,created_at,comment").eq("unit_id",unit.id).eq("student_id",studentId)
+       .order("created_at",{ascending:false}),
+     supabase.from("mathlab_learning_upload_reviews")
+       .select("upload_id,score,max_score,feedback")
+   ]);
+   if(sent.error)throw sent.error;if(reviewed.error)throw reviewed.error;
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   const reviews=new Map((reviewed.data||[]).map(r=>[r.upload_id,r]));
+   if(!sent.data?.length){list.append(learningTextElement("p","Δεν έχεις στείλει ακόμα κάποιο έγγραφο.","muted"));return}
+   for(const file of sent.data||[]){
+     const box=document.createElement("div");box.className="learningCard";
+     box.append(learningTextElement("strong","📎 "+file.original_name));
+     box.append(learningTextElement("p",learningFriendlyBytes(file.size_bytes)+" · "+new Date(file.created_at).toLocaleString("el-GR"),"learningHint"));
+     const review=reviews.get(file.id);
+     if(review?.score!=null)box.append(learningTextElement("p","Βαθμός: "+review.score+" / "+review.max_score));
+     if(review?.feedback)box.append(learningTextElement("p","Σχόλιο της κυρίας Φωτεινής: "+review.feedback));
+     list.append(box);
+   }
+ }
+ submit.onclick=async()=>{
+   const file=fileInput.files?.[0];
+   if(!file){status.textContent="Επίλεξε πρώτα ένα αρχείο.";return}
+   if(file.size>learningMaxFileSize||file.size===0||!learningAllowedExts.has(learningExt(file.name))){
+     status.textContent="Επίλεξε υποστηριζόμενο αρχείο έως 50 MB.";return;
+   }
+   submit.disabled=true;choose.disabled=true;
+   let uploadedPath=null,metadataSaved=false;
+   try{
+     status.textContent="Ανεβαίνει το αρχείο: "+file.name;
+     const path="student-uploads/"+studentId+"/"+unit.id+"/"+crypto.randomUUID()+"."+learningExt(file.name);
+     const stored=await supabase.storage.from(learningBucket).upload(path,file,{
+       upsert:false,contentType:file.type||"application/octet-stream",cacheControl:"0"
+     });
+     if(stored.error)throw stored.error;
+     uploadedPath=path;
+     const saved=await supabase.from("mathlab_learning_student_uploads").insert({
+       student_id:studentId,unit_id:unit.id,storage_path:path,original_name:file.name,
+       mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:comment.value.trim()
+     }).select("id").single();
+     if(saved.error)throw saved.error;
+     metadataSaved=true;fileInput.value="";comment.value="";chosen.textContent="Δεν έχει επιλεγεί αρχείο.";
+     status.textContent="✓ Το έγγραφο στάλθηκε και εμφανίζεται στις «Εργασίες» της κυρίας Φωτεινής.";
+     await listMyUploads();
+   }catch(error){status.textContent="Το έγγραφο δεν στάλθηκε: "+(error?.message||String(error))}
+   finally{
+     if(uploadedPath&&!metadataSaved){
+       await supabase.storage.from(learningBucket).remove([uploadedPath]);
+     }
+     if(submit.isConnected){submit.disabled=false;choose.disabled=false}
+   }
+ };
+ try{await listMyUploads()}catch(error){status.textContent="Δεν φορτώθηκαν τα απεσταλμένα αρχεία: "+(error?.message||String(error))}
+}
+
 async function studentLearningUnitView(user,studentId,unit){
  if(profile?.role!=="student")return;
  $("view").innerHTML='<div class="card"><button type="button" class="alt" id="learningBack">← Τα μαθήματά μου</button><h2 id="learningUnitTitle"></h2><p id="learningUnitInfo"></p><p id="learningUnitStatus" role="status">Φόρτωση...</p><div id="learningUnitFiles"></div><div id="learningUnitExercises"></div></div>';
@@ -1177,6 +1259,9 @@ async function studentLearningUnitView(user,studentId,unit){
      b.onclick=()=>studentLearningFileWorkspace(studentId,file,filesRoot);
      filesRoot.append(b);
    }
+   const studentUploadMount=document.createElement("div");
+   filesRoot.append(studentUploadMount);
+   studentUploadDocumentPanel(studentId,unit,studentUploadMount);
    exerciseRoot.append(learningTextElement("h3","Ασκήσεις"));
    const questions=qr.data||[];
    if(!questions.length){exerciseRoot.append(learningTextElement("p","Δεν υπάρχουν ακόμη ασκήσεις."));return}
