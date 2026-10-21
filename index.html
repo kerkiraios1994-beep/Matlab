@@ -454,6 +454,60 @@ function studentMonthCalendar(lessons) {
  };
  draw();
 }
+
+async function studentMessagesView(user){
+ if(profile?.role!=="student")return;
+ $("view").innerHTML='<div class="card"><h2>Τα μηνύματά μου</h2><p class="muted">Γράψε ένα μήνυμα στον καθηγητή σου. Μόνο εσύ και ο διαχειριστής μπορείτε να διαβάσετε αυτή τη συνομιλία.</p><button type="button" class="alt" id="studentMessagesReload">Ανανέωση μηνυμάτων</button><p id="studentMessageStatus" role="status"></p><div id="studentMessageHistory" class="chatHistory"></div><form id="studentMessageForm"><label for="studentMessageBody">Μήνυμα προς τον καθηγητή</label><textarea id="studentMessageBody" class="chatTextarea" name="body" maxlength="2000" required placeholder="Γράψε το μήνυμά σου..."></textarea><button type="submit">Αποστολή μηνύματος</button></form></div>';
+ const status=$("studentMessageStatus");
+ try{
+   const s=await supabase.from("students").select("id").eq("user_id",user.id).maybeSingle();
+   if(s.error)throw s.error;
+   if(!s.data?.id){
+     status.textContent="Ο λογαριασμός σου δεν έχει συνδεθεί ακόμη με μαθητή.";
+     $("studentMessageForm").classList.add("hide");
+     return;
+   }
+   const id=s.data.id;
+   async function load(){
+     const r=await supabase.from("mathlab_messages")
+       .select("id,body,sender_role,created_at,read_at").eq("student_id",id)
+       .order("created_at",{ascending:false}).limit(200);
+     if(r.error)throw r.error;
+     renderChatBubbles($("studentMessageHistory"),(r.data||[]).reverse(),"student");
+     const mark=await supabase.rpc("mark_mathlab_messages_read",{p_student_id:id});
+     if(mark.error)throw mark.error;
+   }
+   $("studentMessagesReload").onclick=async()=>{
+     try{await load();status.textContent="Τα μηνύματα ενημερώθηκαν."}
+     catch(error){status.textContent="Δεν φορτώθηκαν τα μηνύματα: "+(error?.message||String(error))}
+   };
+   $("studentMessageForm").onsubmit=async event=>{
+     event.preventDefault();
+     const form=event.currentTarget;
+     const button=form.querySelector('button[type="submit"]');
+     const body=String(new FormData(form).get("body")||"").trim();
+     if(!body||body.length>2000)return;
+     button.disabled=true;
+     status.textContent="Αποστολή...";
+     try{
+       const auth=await supabase.auth.getUser();
+       if(auth.error)throw auth.error;
+       if(!auth.data?.user||auth.data.user.id!==user.id)throw new Error("Η σύνδεση έληξε.");
+       const added=await supabase.from("mathlab_messages")
+         .insert({student_id:id,sender_id:user.id,sender_role:"student",body})
+         .select("id").single();
+       if(added.error)throw added.error;
+       form.reset();
+       status.textContent="Το μήνυμα στάλθηκε στον καθηγητή.";
+       await load();
+     }catch(error){status.textContent="Δεν επιβεβαιώθηκε η αποστολή: "+(error?.message||String(error))}
+     finally{if(button.isConnected)button.disabled=false}
+   };
+   await load();
+   status.textContent="Μπορείς να στείλεις μήνυμα στον καθηγητή σου.";
+ }catch(error){status.textContent="Δεν φορτώθηκε η συνομιλία: "+(error?.message||String(error))}
+}
+
 async function studentHome(user){
  $("dashboard").querySelector("h1").textContent="Η προσωπική μου περιοχή";
  $("view").innerHTML='<div class="card"><h2>Το πρόγραμμά μου</h2><p id="personalStudentStatus" role="status">Φόρτωση μαθημάτων...</p><div id="myLessons"></div><div id="myTasks"></div><div id="myGrades"></div></div>';
@@ -566,8 +620,8 @@ async function view(table){if(table==="messages")return messagesView();if(table=
   screen("dashboard");
   $("dashboard").querySelector("h1").textContent=profile.role==="admin"?"Πίνακας διαχείρισης":"Η προσωπική μου περιοχή";
   $("profile").textContent=profile.full_name+" · "+({admin:"Διαχειριστής–Καθηγητής",teacher:"Καθηγητής",student:"Μαθητής",parent:"Γονέας"}[profile.role]||"Χρήστης");
-  $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
-  if(profile.role==="admin")view("students");
+  $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):profile.role==="student"?[["studentCalendar",["Το πρόγραμμά μου",[]]],["studentMessages",["Μηνύματα",[]]]]:[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
+  if(profile.role==="admin"){view("students");refreshMessageBadge();}
   else if(profile.role==="student")studentHome(user);
   else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή</h2><p>Δεν υπάρχουν δικαιώματα διαχείρισης.</p></div>';
  }catch(err){
@@ -576,7 +630,17 @@ async function view(table){if(table==="messages")return messagesView();if(table=
    if(inviteToken)$("inviteStatus").textContent=msg;
    else $("message").textContent=msg;
  }
-};$("nav").onclick=e=>{const id=e.target.dataset.tab;if(id&&profile?.role==="admin")view(id)};
+};$("nav").onclick=async e=>{
+ const id=e.target?.dataset?.tab;
+ if(!id)return;
+ if(profile?.role==="admin"){view(id);return}
+ if(profile?.role==="student"&&(id==="studentCalendar"||id==="studentMessages")){
+   const result=await supabase.auth.getUser();
+   if(result.error||!result.data?.user){$("view").innerHTML='<div class="card">Η σύνδεση έληξε. Κάνε είσοδο ξανά.</div>';return}
+   if(id==="studentCalendar")studentHome(result.data.user);
+   else studentMessagesView(result.data.user);
+ }
+};
 $("inviteSignupForm").onsubmit=async event=>{
  event.preventDefault();
  const form=event.currentTarget;
@@ -655,4 +719,4 @@ $("inviteExistingLogin").onclick=async()=>{
    $("inviteStatus").textContent="Δεν ολοκληρώθηκε η αποσύνδεση: "+(error?.message||String(error));
  }finally{btn.disabled=false}
 }
-;$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});start();</script></body></html>
+;$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});document.addEventListener("visibilitychange",()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()});setInterval(()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()},60000);start();</script></body></html>
