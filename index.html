@@ -494,29 +494,78 @@ async function learningTeacherExerciseReview(root,answer,question,studentName,ex
  section.append(feedbackBlock);
  root.append(section);
 }
+
 async function learningTeacherFileReview(root,annotation,file,studentName,existing){
  const section=document.createElement("section");section.className="learningQuestion";
- section.append(learningTextElement("strong",studentName+" — "+(file?.original_name||"Αρχείο")));
- section.append(learningTextElement("p","Σημειώσεις μαθητή:\n"+(annotation.note||"—")+"\nΣχόλιο μαθητή:\n"+(annotation.comment||"—")));
- const original=document.createElement("div");section.append(learningTextElement("h4","Χειρόγραφες σημειώσεις μαθητή"),original);
- learningCreatePad(original,annotation.strokes,null,false);
- const correction=document.createElement("div");section.append(learningTextElement("h4","Οι διορθώσεις σου"),correction);
- let pad=learningCreatePad(correction,existing?.correction_strokes||[],()=>{});
- const text=document.createElement("textarea");text.className="chatTextarea";text.maxLength=5000;
- text.placeholder="Σχόλιο της κυρίας Φωτεινής...";text.value=existing?.feedback||"";
- const save=document.createElement("button");save.type="button";save.textContent="Αποθήκευση σχολίου και διορθώσεων";
- const state=learningTextElement("p","","learningHint");
- section.append(text,save,state);
+ section.append(learningTextElement("h3",studentName+" — "+(file?.original_name||"Αρχείο")));
+ section.append(learningTextElement("p","Σημειώσεις μαθητή:\n"+(annotation.note||"—")+
+   "\nΣχόλιο μαθητή:\n"+(annotation.comment||"—")));
+ section.append(learningTextElement("p",annotation.submitted?
+   "✓ Υποβλημένη εργασία":"Η εργασία αποθηκεύτηκε αυτόματα (σε εξέλιξη).","learningHint"));
+ const ext=learningExt(file?.original_name||""),pdf=ext==="pdf";
+ const drawing=document.createElement("div");section.append(drawing);
+ const teacherNote=document.createElement("textarea");teacherNote.className="chatTextarea";teacherNote.maxLength=5000;
+ teacherNote.placeholder="Διόρθωση / σχόλιο προς τον μαθητή...";
+ teacherNote.value=existing?.feedback||"";
+ let pad={getStrokes:()=>Array.isArray(existing?.correction_strokes)?existing.correction_strokes:[]};
+ if(pdf&&file?.storage_path){
+   const info=learningTextElement("p","Γράψε με κόκκινο μολύβι, γόμα ή πληκτρολόγιο επάνω στο ίδιο PDF που συμπλήρωσε ο μαθητής.","learningHint");
+   const preview=document.createElement("div");preview.className="learningPreview";
+   section.append(info,preview);
+   try{
+     const downloaded=await supabase.storage.from(learningBucket).download(file.storage_path);
+     if(downloaded.error)throw downloaded.error;
+     pad=await learningRenderWritablePdf(preview,downloaded.data,{
+       editable:"teacher",studentStrokes:annotation.strokes||[],
+       teacherStrokes:existing?.correction_strokes||[]
+     });
+     if(!section.isConnected && !root.isConnected)return;
+   }catch(e){
+     preview.textContent="Δεν εμφανίστηκε το PDF: "+(e?.message||String(e));
+     drawing.append(learningTextElement("p","Εναλλακτικός χώρος διορθώσεων"));
+     pad=learningCreatePad(drawing,existing?.correction_strokes||[],null);
+   }
+ }else{
+   section.append(learningTextElement("h4","Οι σημειώσεις του μαθητή"));
+   learningCreatePad(drawing,annotation.strokes||[],null,false);
+   const correction=document.createElement("div");
+   section.append(learningTextElement("h4","Οι διορθώσεις σου"),correction);
+   pad=learningCreatePad(correction,existing?.correction_strokes||[],null);
+ }
+ const row=document.createElement("div");row.className="learningInline";
+ const gradeLabel=document.createElement("label");gradeLabel.textContent="Βαθμός";
+ const grade=document.createElement("input");grade.type="number";grade.min="0";grade.max="100";grade.step="0.25";
+ grade.style.width="105px";grade.placeholder="π.χ. 18";grade.value=existing?.score??"";
+ gradeLabel.append(grade);
+ const maxLabel=document.createElement("label");maxLabel.textContent="Με άριστα";
+ const max=document.createElement("input");max.type="number";max.min="1";max.max="100";max.step="0.25";
+ max.style.width="105px";max.value=existing?.max_score??20;
+ maxLabel.append(max);row.append(gradeLabel,maxLabel);
+ const save=document.createElement("button");save.type="button";save.textContent="Αποθήκευση διορθώσεων και βαθμού";
+ const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
+ section.append(learningTextElement("label","Σχόλιο της κυρίας Φωτεινής"),teacherNote,row,save,state);
  save.onclick=async()=>{
-   save.disabled=true;state.textContent="Αποθήκευση διορθώσεων...";
+   const raw=grade.value.trim(),maxRaw=max.value.trim();
+   const n=Number(raw),limit=Number(maxRaw);
+   if(raw!=="" && (!maxRaw||!Number.isFinite(n)||!Number.isFinite(limit)||n<0||limit<=0||limit>100||n>limit)){
+     state.textContent="Ο βαθμός πρέπει να είναι από 0 έως το άριστα (μέχρι 100).";return;
+   }
+   if(raw===""&&existing?.score!=null){
+     state.textContent="Συμπλήρωσε τον βαθμό ή κράτησε τον υπάρχοντα.";return;
+   }
+   save.disabled=true;state.textContent="Αποθήκευση...";
    try{
      const auth=await supabase.auth.getUser();if(auth.error)throw auth.error;
-     const result=await supabase.from("mathlab_learning_file_feedback").upsert({
-       file_id:annotation.file_id,student_id:annotation.student_id,feedback:text.value,
-       correction_strokes:pad.getStrokes(),reviewed_by:auth.data.user.id,updated_at:new Date().toISOString()
-     },{onConflict:"file_id,student_id"});
+     const obj={
+       file_id:annotation.file_id,student_id:annotation.student_id,feedback:teacherNote.value,
+       correction_strokes:pad.getStrokes(),reviewed_by:auth.data.user.id,
+       updated_at:new Date().toISOString(),score:raw===""?null:n,max_score:raw===""?null:limit
+     };
+     const result=await supabase.from("mathlab_learning_file_feedback").upsert(obj,
+       {onConflict:"file_id,student_id"}).select("file_id").single();
      if(result.error)throw result.error;
-     state.textContent="✓ Οι διορθώσεις αποθηκεύτηκαν και είναι ορατές στον μαθητή.";
+     state.textContent=raw===""?
+       "✓ Οι διορθώσεις και το σχόλιο αποθηκεύτηκαν.":"✓ Αποθηκεύτηκαν οι διορθώσεις και ο βαθμός ενημερώθηκε στους μαθητικούς βαθμούς.";
    }catch(e){state.textContent="Δεν αποθηκεύτηκαν: "+(e?.message||String(e))}
    finally{save.disabled=false}
  };
@@ -531,7 +580,7 @@ async function refreshLearningAdminList(){
    const [units,students,files,questions,assigned]=await Promise.all([
      supabase.from("mathlab_learning_units").select("id,title,description,all_students,published,created_at").order("created_at",{ascending:false}).limit(100),
      supabase.from("students").select("id,full_name"),
-     supabase.from("mathlab_learning_files").select("id,unit_id,original_name,size_bytes"),
+     supabase.from("mathlab_learning_files").select("id,unit_id,original_name,storage_path,size_bytes"),
      supabase.from("mathlab_learning_exercises").select("id,unit_id,question,position").order("position"),
      supabase.from("mathlab_learning_unit_students").select("unit_id,student_id")
    ]);
@@ -564,9 +613,9 @@ async function refreshLearningAdminList(){
          const fileIds=unitFiles.length?unitFiles.map(x=>x.id):["00000000-0000-0000-0000-000000000000"];
          const [answersResult,annotationsResult,reviewsResult,feedbackResult]=await Promise.all([
            supabase.from("mathlab_learning_answers").select("exercise_id,student_id,answer_text,drawing_data,submitted,updated_at").in("exercise_id",excIds),
-           supabase.from("mathlab_learning_annotations").select("file_id,student_id,note,comment,strokes,updated_at").in("file_id",fileIds),
+           supabase.from("mathlab_learning_annotations").select("file_id,student_id,note,comment,strokes,submitted,updated_at").in("file_id",fileIds),
            supabase.from("mathlab_learning_reviews").select("exercise_id,student_id,score,max_score,feedback,correction_drawing").in("exercise_id",excIds),
-           supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,feedback,correction_strokes").in("file_id",fileIds)
+           supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,feedback,correction_strokes,score,max_score").in("file_id",fileIds)
          ]);
          for(const result of [answersResult,annotationsResult,reviewsResult,feedbackResult])if(result.error)throw result.error;
          detail.replaceChildren();
