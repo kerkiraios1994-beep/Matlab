@@ -727,36 +727,276 @@ async function studentCalendarView(user){
    studentMonthCalendar(lessons.data||[]);
  }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκε το ημερολόγιο: "+(error?.message||String(error))}
 }
+
+function learningTextElement(tag,value,className){
+ const el=document.createElement(tag);el.textContent=value;if(className)el.className=className;return el;
+}
+function learningCreatePad(container,initialStrokes,notify,editable=true){
+ const pad=document.createElement("canvas");pad.className="learningDraw";pad.width=800;pad.height=380;
+ const toolbar=document.createElement("div");toolbar.className="learningInline";
+ const pen=document.createElement("button");pen.type="button";pen.className="alt";pen.textContent="✏ Μολύβι";
+ const erase=document.createElement("button");erase.type="button";erase.className="alt";erase.textContent="◻ Γόμα";
+ const undo=document.createElement("button");undo.type="button";undo.className="alt";undo.textContent="↶ Αναίρεση";
+ const clear=document.createElement("button");clear.type="button";clear.className="alt";clear.textContent="Καθαρισμός";
+ toolbar.append(pen,erase,undo,clear);
+ container.append(toolbar,pad);
+ const context=pad.getContext("2d");
+ let strokes=Array.isArray(initialStrokes)?initialStrokes.filter(x=>x&&Array.isArray(x.points)).slice(0,500):[],active=null,mode="pen";
+ function point(e){const rect=pad.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))]}
+ function render(){
+   context.clearRect(0,0,pad.width,pad.height);
+   for(const stroke of strokes.concat(active?[active]:[])){
+     if(!stroke.points?.length)continue;
+     context.beginPath();context.lineCap="round";context.lineJoin="round";
+     context.strokeStyle=stroke.mode==="erase"?"#ffffff":"#a52b5a";
+     context.lineWidth=stroke.mode==="erase"?28:3;
+     context.moveTo(stroke.points[0][0]*pad.width,stroke.points[0][1]*pad.height);
+     for(const p of stroke.points.slice(1))context.lineTo(p[0]*pad.width,p[1]*pad.height);
+     if(stroke.points.length===1)context.lineTo(stroke.points[0][0]*pad.width+.2,stroke.points[0][1]*pad.height+.2);
+     context.stroke();
+   }
+ }
+ function changed(){if(notify)notify(strokes.slice())}
+ pen.onclick=()=>{mode="pen"};
+ erase.onclick=()=>{mode="erase"};
+ undo.onclick=()=>{strokes.pop();render();changed()};
+ clear.onclick=()=>{if(window.confirm("Να καθαριστούν οι χειρόγραφες σημειώσεις;")){strokes=[];render();changed()}};
+ pad.onpointerdown=e=>{
+   if(!editable)return;e.preventDefault();
+   try{pad.setPointerCapture(e.pointerId)}catch(_){}
+   active={mode,points:[point(e)]};render();
+ };
+ pad.onpointermove=e=>{
+   if(!active)return;e.preventDefault();
+   if(active.points.length<1800){active.points.push(point(e));render()}
+ };
+ function finish(){
+   if(!active)return;
+   strokes.push(active);active=null;
+   if(strokes.length>500)strokes=strokes.slice(-500);
+   render();changed();
+ }
+ pad.onpointerup=finish;pad.onpointercancel=finish;
+ if(!editable){toolbar.classList.add("hide");pad.style.pointerEvents="none"}
+ render();return {element:pad,getStrokes:()=>strokes.slice(),setStrokes:array=>{strokes=Array.isArray(array)?array.slice():[];render()},render};
+}
+function learningStatusText(status,message){if(status?.isConnected)status.textContent=message}
 async function studentLessonsView(user){
  if(profile?.role!=="student")return;
- $("view").innerHTML='<div class="card"><h2>Τα μαθήματά μου</h2><p id="personalLessonsStatus" role="status">Φόρτωση...</p><div id="personalLessonsList"></div><div id="personalAssignments"></div></div>';
- const status=$("personalLessonsStatus"),lessonsNode=$("personalLessonsList"),tasksNode=$("personalAssignments");
+ $("view").innerHTML='<div class="card"><h2>Τα μαθήματά μου</h2><p class="learningHint">Μελέτησε το υλικό σου, γράψε, σβήσε, άφησε σχόλια και λύσε τις ασκήσεις χωρίς να κατεβάσεις αρχείο.</p><p id="personalLearningStatus" role="status">Φόρτωση...</p><div id="learningStudentUnits"></div></div>';
+ const status=$("personalLearningStatus"),root=$("learningStudentUnits");
  try{
    const student=await studentRecordFor(user);
-   const result=await supabase.from("lessons")
-     .select("lesson_date,lesson_time,subject").eq("student_id",student.id)
-     .order("lesson_date",{ascending:true}).order("lesson_time",{ascending:true});
+   const result=await supabase.from("mathlab_learning_units").select("id,title,description").eq("published",true).order("created_at",{ascending:false});
    if(result.error)throw result.error;
-   if(!status.isConnected)return;
-   status.textContent="Τα προγραμματισμένα μαθήματά σου και οι εργασίες σου.";
-   const lessons=result.data||[];
-   lessonsNode.innerHTML='<h3>Προγραμματισμένα μαθήματα</h3>'+
-     (lessons.length?'<ul>'+lessons.map(l=>'<li><strong>'+escapeHtml(l.subject)+'</strong> — '+escapeHtml(l.lesson_date)+' στις '+escapeHtml(String(l.lesson_time).slice(0,5))+'</li>').join("")+'</ul>':'<p class="muted">Δεν έχουν καταχωριστεί ακόμη μαθήματα.</p>');
-   const enrolls=await supabase.from("enrollments").select("class_id").eq("student_id",student.id);
-   if(enrolls.error)throw enrolls.error;
-   const ids=(enrolls.data||[]).map(x=>x.class_id);
-   let tasks=[];
-   if(ids.length){
-     const work=await supabase.from("assignments")
-       .select("title,description,due_date").in("class_id",ids).order("due_date");
-     if(work.error)throw work.error;
-     tasks=work.data||[];
+   if(!root.isConnected)return;
+   status.textContent=(result.data||[]).length?"Επίλεξε μάθημα για να δεις αρχεία και ασκήσεις.":"Δεν έχουν δημοσιευτεί ακόμη μαθήματα για εσένα.";
+   for(const unit of result.data||[]){
+     const box=document.createElement("section");box.className="learningCard";
+     box.append(learningTextElement("h3",unit.title));
+     if(unit.description)box.append(learningTextElement("p",unit.description));
+     const button=document.createElement("button");button.type="button";button.textContent="Άνοιγμα μαθήματος";
+     button.onclick=()=>studentLearningUnitView(user,student.id,unit);
+     box.append(button);root.append(box);
    }
-   if(!tasksNode.isConnected)return;
-   tasksNode.innerHTML='<h3>Οι εργασίες μου</h3>'+
-     (tasks.length?'<ul>'+tasks.map(t=>'<li><strong>'+escapeHtml(t.title)+'</strong>'+(t.due_date?' — μέχρι '+escapeHtml(t.due_date):'')+(t.description?'<p>'+escapeHtml(t.description)+'</p>':'')+'</li>').join("")+'</ul>':'<p class="muted">Δεν υπάρχουν ακόμη εργασίες.</p>');
- }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν όλα τα μαθήματα ή οι εργασίες: "+(error?.message||String(error))}
+ }catch(err){learningStatusText(status,"Δεν φορτώθηκαν τα μαθήματα: "+(err?.message||String(err)))}
 }
+async function studentLearningUnitView(user,studentId,unit){
+ if(profile?.role!=="student")return;
+ $("view").innerHTML='<div class="card"><button type="button" class="alt" id="learningBack">← Τα μαθήματά μου</button><h2 id="learningUnitTitle"></h2><p id="learningUnitInfo"></p><p id="learningUnitStatus" role="status">Φόρτωση...</p><div id="learningUnitFiles"></div><div id="learningUnitExercises"></div></div>';
+ $("learningBack").onclick=()=>studentLessonsView(user);
+ $("learningUnitTitle").textContent=unit.title;
+ $("learningUnitInfo").textContent=unit.description||"";
+ const status=$("learningUnitStatus"),filesRoot=$("learningUnitFiles"),exerciseRoot=$("learningUnitExercises");
+ try{
+   const [fr,qr]=await Promise.all([
+     supabase.from("mathlab_learning_files").select("id,storage_path,original_name,mime_type,size_bytes").eq("unit_id",unit.id).order("created_at"),
+     supabase.from("mathlab_learning_exercises").select("id,question,position").eq("unit_id",unit.id).order("position")
+   ]);
+   if(fr.error)throw fr.error;if(qr.error)throw qr.error;
+   if(!status.isConnected)return;
+   status.textContent="Η πρόοδός σου αποθηκεύεται αυτόματα. Επίλεξε αρχείο για προσωπικές σημειώσεις και σχόλια.";
+   filesRoot.append(learningTextElement("h3","Τα αρχεία μου"));
+   if(!fr.data?.length)filesRoot.append(learningTextElement("p","Δεν έχουν ανέβει αρχεία."));
+   for(const file of fr.data||[]){
+     const b=document.createElement("button");b.type="button";b.className="alt";
+     b.textContent="Άνοιγμα: "+file.original_name;
+     b.onclick=()=>studentLearningFileWorkspace(studentId,file,filesRoot);
+     filesRoot.append(b);
+   }
+   exerciseRoot.append(learningTextElement("h3","Ασκήσεις"));
+   const questions=qr.data||[];
+   if(!questions.length){exerciseRoot.append(learningTextElement("p","Δεν υπάρχουν ακόμη ασκήσεις."));return}
+   const [ar,rr]=await Promise.all([
+     supabase.from("mathlab_learning_answers").select("exercise_id,answer_text,drawing_data,submitted").eq("student_id",studentId).in("exercise_id",questions.map(q=>q.id)),
+     supabase.from("mathlab_learning_reviews").select("exercise_id,score,max_score,feedback,correction_drawing").eq("student_id",studentId).in("exercise_id",questions.map(q=>q.id))
+   ]);
+   if(ar.error)throw ar.error;if(rr.error)throw rr.error;
+   const answers=new Map((ar.data||[]).map(x=>[x.exercise_id,x])),reviews=new Map((rr.data||[]).map(x=>[x.exercise_id,x]));
+   for(const [index,q] of questions.entries()){
+     const card=document.createElement("section");card.className="learningQuestion";
+     card.append(learningTextElement("h4","Άσκηση "+(index+1)),learningTextElement("p",q.question));
+     const textArea=document.createElement("textarea");textArea.maxLength=10000;textArea.placeholder="Γράψε τη λύση σου...";
+     textArea.value=answers.get(q.id)?.answer_text||"";card.append(textArea);
+     const canvasBox=document.createElement("div");card.append(learningTextElement("p","Χειρόγραφη λύση:"));card.append(canvasBox);
+     const canvas=document.createElement("canvas");canvas.width=800;canvas.height=380;canvas.className="learningDraw";
+     const tools=document.createElement("div");tools.className="learningInline";
+     const pen=document.createElement("button");pen.type="button";pen.className="alt";pen.textContent="✏ Μολύβι";
+     const eraser=document.createElement("button");eraser.type="button";eraser.className="alt";eraser.textContent="Γόμα";
+     const clear=document.createElement("button");clear.type="button";clear.className="alt";clear.textContent="Καθαρισμός";
+     tools.append(pen,eraser,clear);canvasBox.append(tools,canvas);
+     const ctx=canvas.getContext("2d"),old=answers.get(q.id);
+     if(old?.drawing_data){const image=new Image();image.onload=()=>ctx.drawImage(image,0,0,800,380);image.src=old.drawing_data}
+     let mode="draw",active=false,changed=0,timer=null,submitted=Boolean(old?.submitted),saving=false;
+     const state=learningTextElement("p","Ό,τι γράφεις θα αποθηκεύεται αυτόματα.","learningHint");
+     const done=document.createElement("button");done.type="button";done.textContent=submitted?"Ολοκληρωμένη ✓":"Ολοκλήρωση άσκησης";
+     card.append(state,done);
+     const review=reviews.get(q.id);
+     if(review){
+       const fb=document.createElement("div");fb.className="learningCard";
+       fb.append(learningTextElement("strong","Βαθμός από την κυρία Φωτεινή: "+review.score+" / "+review.max_score));
+       if(review.feedback)fb.append(learningTextElement("p","Σχόλιο: "+review.feedback));
+       if(review.correction_drawing){
+         const correction=document.createElement("img");
+         correction.alt="Διορθώσεις της καθηγήτριας";correction.style.maxWidth="100%";
+         correction.src=review.correction_drawing;fb.append(correction);
+       }
+       card.append(fb);
+     }
+     function coord(ev){
+       const r=canvas.getBoundingClientRect();
+       return [(ev.clientX-r.left)*canvas.width/r.width,(ev.clientY-r.top)*canvas.height/r.height];
+     }
+     canvas.onpointerdown=ev=>{
+       ev.preventDefault();active=true;try{canvas.setPointerCapture(ev.pointerId)}catch(_){}
+       const [x,y]=coord(ev);ctx.beginPath();ctx.moveTo(x,y);
+       ctx.globalCompositeOperation=mode==="erase"?"destination-out":"source-over";
+       ctx.strokeStyle="#6b234f";ctx.lineWidth=mode==="erase"?28:3;
+       ctx.lineCap="round";
+       ctx.lineTo(x+.1,y+.1);ctx.stroke();
+     };
+     canvas.onpointermove=ev=>{if(!active)return;ev.preventDefault();const [x,y]=coord(ev);ctx.lineTo(x,y);ctx.stroke()};
+     canvas.onpointerup=()=>{if(!active)return;active=false;ctx.globalCompositeOperation="source-over";schedule()};
+     canvas.onpointercancel=canvas.onpointerup;
+     pen.onclick=()=>{mode="draw"};
+     eraser.onclick=()=>{mode="erase"};
+     clear.onclick=()=>{if(window.confirm("Να καθαριστεί η χειρόγραφη λύση;")){ctx.clearRect(0,0,800,380);schedule()}};
+     async function save(){
+       if(saving){timer=setTimeout(save,900);return}
+       saving=true;const rev=changed;
+       state.textContent="Αυτόματη αποθήκευση...";
+       try{
+         const png=canvas.toDataURL("image/png");
+         if(png.length>900000)throw Error("Η χειρόγραφη λύση είναι πολύ μεγάλη.");
+         const result=await supabase.from("mathlab_learning_answers").upsert({
+           exercise_id:q.id,student_id:studentId,answer_text:textArea.value,
+           drawing_data:png,submitted,updated_at:new Date().toISOString()
+         },{onConflict:"exercise_id,student_id"});
+         if(result.error)throw result.error;
+         if(rev===changed)state.textContent="Αποθηκεύτηκε ✓";
+         else timer=setTimeout(save,500);
+       }catch(e){state.textContent="Δεν αποθηκεύτηκε: "+(e?.message||String(e))}
+       finally{saving=false}
+     }
+     function schedule(){submitted=false;done.textContent="Ολοκλήρωση άσκησης";changed++;clearTimeout(timer);timer=setTimeout(save,850);state.textContent="Εκκρεμεί αποθήκευση..."}
+     textArea.oninput=schedule;
+     done.onclick=()=>{submitted=true;done.textContent="Ολοκληρωμένη ✓";changed++;clearTimeout(timer);save()};
+     exerciseRoot.append(card);
+   }
+ }catch(err){learningStatusText(status,"Δεν φορτώθηκε το μάθημα: "+(err?.message||String(err)))}
+}
+async function studentLearningFileWorkspace(studentId,file,listRoot){
+ const previous=$("learningFileWorkspace");
+ if(previous)previous.remove();
+ const workspace=document.createElement("section");workspace.className="learningCard";workspace.id="learningFileWorkspace";
+ listRoot.append(workspace);
+ const heading=learningTextElement("h3",file.original_name);
+ const status=learningTextElement("p","Φόρτωση αρχείου...","learningHint");status.setAttribute("role","status");
+ const preview=document.createElement("div");preview.className="learningPreview";
+ const textArea=document.createElement("textarea");textArea.className="chatTextarea";textArea.maxLength=10000;textArea.placeholder="Γράψε τις σημειώσεις σου...";
+ const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=5000;comment.placeholder="Άφησε σχόλιο στην κυρία Φωτεινή...";
+ const padHolder=document.createElement("div");
+ const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
+ workspace.append(heading,status,preview,learningTextElement("h4","Γράψε ή σβήσε πάνω στον προσωπικό χώρο σημειώσεων"),padHolder,
+   learningTextElement("label","Οι σημειώσεις μου"),textArea,learningTextElement("label","Το σχόλιό μου"),comment,state);
+ try{
+   const [a,feedback]=await Promise.all([
+     supabase.from("mathlab_learning_annotations").select("strokes,note,comment").eq("file_id",file.id).eq("student_id",studentId).maybeSingle(),
+     supabase.from("mathlab_learning_file_feedback").select("feedback,correction_strokes").eq("file_id",file.id).eq("student_id",studentId).maybeSingle()
+   ]);
+   if(a.error)throw a.error;if(feedback.error)throw feedback.error;
+   if(!workspace.isConnected)return;
+   textArea.value=a.data?.note||"";comment.value=a.data?.comment||"";
+   let rev=0,timer=null,saving=false;
+   const pad=learningCreatePad(padHolder,a.data?.strokes||[],()=>schedule());
+   if(feedback.data){
+     const box=document.createElement("div");box.className="learningCard";
+     box.append(learningTextElement("h4","Διορθώσεις από την κυρία Φωτεινή"));
+     if(feedback.data.feedback)box.append(learningTextElement("p",feedback.data.feedback));
+     if(feedback.data.correction_strokes?.length)learningCreatePad(box,feedback.data.correction_strokes,null,false);
+     workspace.append(box);
+   }
+   async function save(){
+     if(saving){timer=setTimeout(save,700);return}
+     saving=true;const current=rev;
+     state.textContent="Αυτόματη αποθήκευση σημειώσεων...";
+     try{
+       const answer=await supabase.from("mathlab_learning_annotations").upsert({
+         file_id:file.id,student_id:studentId,strokes:pad.getStrokes(),
+         note:textArea.value,comment:comment.value,updated_at:new Date().toISOString()
+       },{onConflict:"file_id,student_id"});
+       if(answer.error)throw answer.error;
+       if(current===rev)state.textContent="Οι σημειώσεις αποθηκεύτηκαν ✓";
+       else timer=setTimeout(save,500);
+     }catch(e){state.textContent="Δεν αποθηκεύτηκαν: "+(e?.message||String(e))}
+     finally{saving=false}
+   }
+   function schedule(){rev++;clearTimeout(timer);timer=setTimeout(save,800);state.textContent="Εκκρεμεί αποθήκευση..."}
+   textArea.oninput=schedule;comment.oninput=schedule;
+   const ext=learningExt(file.original_name);
+   if(["png","jpg","jpeg","gif","webp","mp4","webm","mov","pdf","txt","csv"].includes(ext)){
+     const stored=await supabase.storage.from(learningBucket).download(file.storage_path);
+     if(stored.error)throw stored.error;
+     if(!workspace.isConnected)return;
+     const blob=stored.data;
+     if(["png","jpg","jpeg","gif","webp"].includes(ext)){
+       const img=document.createElement("img");img.src=URL.createObjectURL(blob);img.alt=file.original_name;
+       img.onload=()=>URL.revokeObjectURL(img.src);preview.append(img);
+       status.textContent="Προβολή φωτογραφίας μέσα στην εφαρμογή.";
+     }else if(["mp4","webm","mov"].includes(ext)){
+       const video=document.createElement("video");video.controls=true;video.controlsList="nodownload";video.disablePictureInPicture=true;
+       const url=URL.createObjectURL(blob);video.src=url;video.onended=()=>{};
+       preview.append(video);status.textContent="Προβολή βίντεο μέσα στην εφαρμογή.";
+     }else if(["txt","csv"].includes(ext)){
+       const pre=document.createElement("pre");pre.style.whiteSpace="pre-wrap";pre.style.overflowWrap="anywhere";pre.textContent=(await blob.text()).slice(0,100000);
+       preview.append(pre);status.textContent="Προβολή κειμένου μέσα στην εφαρμογή.";
+     }else{
+       status.textContent="Φόρτωση σελίδων PDF...";
+       try{
+         const pdfjs=await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs");
+         pdfjs.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+         const data=new Uint8Array(await blob.arrayBuffer());
+         const doc=await pdfjs.getDocument({data}).promise;
+         const limit=Math.min(doc.numPages,12);
+         for(let n=1;n<=limit;n++){
+           const page=await doc.getPage(n);
+           const viewport=page.getViewport({scale:1.35});
+           const canvas=document.createElement("canvas");canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+           canvas.style.maxWidth="100%";canvas.style.height="auto";canvas.style.display="block";canvas.style.margin="12px auto";
+           await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+           if(!workspace.isConnected)return;
+           preview.append(canvas);
+         }
+         status.textContent="PDF: "+limit+" από "+doc.numPages+" σελίδες σε προστατευμένη προβολή χωρίς κουμπί λήψης.";
+       }catch(error){status.textContent="Το PDF δεν εμφανίστηκε σε αυτή τη συσκευή. Μπορείς να χρησιμοποιήσεις τις σημειώσεις και τις ασκήσεις.";preview.textContent="Δεν υποστηρίζεται η προεπισκόπηση PDF σε αυτή τη συσκευή."}
+     }
+   }else{
+     preview.textContent="Το αρχείο Word/PowerPoint/Office έχει αποθηκευτεί ιδιωτικά. Η προεπισκόπησή του δεν υποστηρίζεται ακόμη. Οι σημειώσεις και τα σχόλιά σου λειτουργούν κανονικά μέσα στην εφαρμογή.";
+     status.textContent="Εργασία πάνω στο μάθημα χωρίς λήψη αρχείου.";
+   }
+ }catch(error){status.textContent="Δεν φορτώθηκε το αρχείο ή οι σημειώσεις: "+(error?.message||String(error))}
+}
+
 async function studentGradesView(user){
  if(profile?.role!=="student")return;
  $("view").innerHTML='<div class="card"><h2>Οι βαθμοί μου</h2><p id="personalGradesStatus" role="status">Φόρτωση βαθμολογιών...</p><div id="personalGradesList"></div></div>';
