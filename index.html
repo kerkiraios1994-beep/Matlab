@@ -1095,7 +1095,7 @@ async function studentLearningUnitView(user,studentId,unit){
      const card=document.createElement("section");card.className="learningQuestion";
      card.append(learningTextElement("h4","Άσκηση "+(index+1)),learningTextElement("p",q.question));
      const textArea=document.createElement("textarea");textArea.maxLength=10000;textArea.placeholder="Γράψε τη λύση σου...";
-     textArea.value=answers.get(q.id)?.answer_text||"";card.append(textArea);
+     textArea.value=answers.get(q.id)?.answer_text||"";const keyboard=document.createElement("button");keyboard.type="button";keyboard.className="alt";keyboard.textContent="⌨ Πληκτρολόγιο";keyboard.onclick=()=>{textArea.focus();textArea.scrollIntoView({block:"nearest",behavior:"smooth"})};card.append(keyboard,textArea);
      const canvasBox=document.createElement("div");card.append(learningTextElement("p","Χειρόγραφη λύση:"));card.append(canvasBox);
      const canvas=document.createElement("canvas");canvas.width=800;canvas.height=380;canvas.className="learningDraw";
      const tools=document.createElement("div");tools.className="learningInline";
@@ -1163,99 +1163,121 @@ async function studentLearningUnitView(user,studentId,unit){
    }
  }catch(err){learningStatusText(status,"Δεν φορτώθηκε το μάθημα: "+(err?.message||String(err)))}
 }
+
 async function studentLearningFileWorkspace(studentId,file,listRoot){
- const previous=$("learningFileWorkspace");
- if(previous)previous.remove();
+ const old=$("learningFileWorkspace");if(old)old.remove();
  const workspace=document.createElement("section");workspace.className="learningCard";workspace.id="learningFileWorkspace";
  listRoot.append(workspace);
+ const ext=learningExt(file.original_name),pdf=ext==="pdf";
  const heading=learningTextElement("h3",file.original_name);
  const status=learningTextElement("p","Φόρτωση αρχείου...","learningHint");status.setAttribute("role","status");
  const preview=document.createElement("div");preview.className="learningPreview";
- const textArea=document.createElement("textarea");textArea.className="chatTextarea";textArea.maxLength=10000;textArea.placeholder="Γράψε τις σημειώσεις σου...";
- const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=5000;comment.placeholder="Άφησε σχόλιο στην κυρία Φωτεινή...";
+ const info=learningTextElement("p",pdf?
+   "Γράψε απευθείας πάνω στο PDF με μολύβι, γόμα ή «⌨ Πληκτρολόγιο». Οι σημειώσεις μένουν στη σωστή σελίδα και αποθηκεύονται αυτόματα.":
+   "Επεξεργάσου το υλικό σου μέσα στην εφαρμογή, χωρίς λήψη αρχείου.","learningHint");
+ const textArea=document.createElement("textarea");
+ textArea.className="chatTextarea";textArea.maxLength=10000;textArea.placeholder="Πρόσθετες σημειώσεις (προαιρετικά)...";
+ const comment=document.createElement("textarea");
+ comment.className="chatTextarea";comment.maxLength=5000;comment.placeholder="Άφησε σχόλιο στην κυρία Φωτεινή...";
  const padHolder=document.createElement("div");
  const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
- workspace.append(heading,status,preview,learningTextElement("h4","Γράψε ή σβήσε πάνω στον προσωπικό χώρο σημειώσεων"),padHolder,
-   learningTextElement("label","Οι σημειώσεις μου"),textArea,learningTextElement("label","Το σχόλιό μου"),comment,state);
+ const complete=document.createElement("button");complete.type="button";complete.textContent="Υποβολή στην κυρία Φωτεινή";
+ workspace.append(heading,info,status,preview);
+ if(!pdf){
+   workspace.append(learningTextElement("h4","Προσωπικές χειρόγραφες σημειώσεις"),padHolder);
+ }
+ workspace.append(learningTextElement("label","Οι σημειώσεις μου"),textArea,
+   learningTextElement("label","Το σχόλιό μου"),comment,complete,state);
  try{
    const [a,feedback]=await Promise.all([
-     supabase.from("mathlab_learning_annotations").select("strokes,note,comment").eq("file_id",file.id).eq("student_id",studentId).maybeSingle(),
-     supabase.from("mathlab_learning_file_feedback").select("feedback,correction_strokes").eq("file_id",file.id).eq("student_id",studentId).maybeSingle()
+     supabase.from("mathlab_learning_annotations")
+       .select("strokes,note,comment,submitted").eq("file_id",file.id).eq("student_id",studentId).maybeSingle(),
+     supabase.from("mathlab_learning_file_feedback")
+       .select("feedback,correction_strokes,score,max_score").eq("file_id",file.id).eq("student_id",studentId).maybeSingle()
    ]);
    if(a.error)throw a.error;if(feedback.error)throw feedback.error;
    if(!workspace.isConnected)return;
    textArea.value=a.data?.note||"";comment.value=a.data?.comment||"";
-   let rev=0,timer=null,saving=false;
-   const pad=learningCreatePad(padHolder,a.data?.strokes||[],()=>schedule());
-   if(feedback.data){
+   let rev=0,timer=null,saving=false,submitted=Boolean(a.data?.submitted);
+   let pad={getStrokes:()=>Array.isArray(a.data?.strokes)?a.data.strokes.slice():[]};
+   const updateSubmitLabel=()=>complete.textContent=submitted?"Υποβλήθηκε ✓ (πάτησε για νέα υποβολή)":"Υποβολή στην κυρία Φωτεινή";
+   updateSubmitLabel();
+   if(!pdf)pad=learningCreatePad(padHolder,a.data?.strokes||[],()=>schedule());
+   if(feedback.data && (feedback.data.feedback||feedback.data.score!==null && feedback.data.score!==undefined||
+     (!pdf&&feedback.data.correction_strokes?.length))){
      const box=document.createElement("div");box.className="learningCard";
      box.append(learningTextElement("h4","Διορθώσεις από την κυρία Φωτεινή"));
+     if(feedback.data.score!==null&&feedback.data.score!==undefined)
+       box.append(learningTextElement("strong","Βαθμός: "+feedback.data.score+" / "+feedback.data.max_score));
      if(feedback.data.feedback)box.append(learningTextElement("p",feedback.data.feedback));
-     if(feedback.data.correction_strokes?.length)learningCreatePad(box,feedback.data.correction_strokes,null,false);
+     if(!pdf&&feedback.data.correction_strokes?.length)
+       learningCreatePad(box,feedback.data.correction_strokes,null,false);
      workspace.append(box);
    }
    async function save(){
+     if(!workspace.isConnected)return;
      if(saving){timer=setTimeout(save,700);return}
      saving=true;const current=rev;
-     state.textContent="Αυτόματη αποθήκευση σημειώσεων...";
+     state.textContent="Αυτόματη αποθήκευση...";
      try{
-       const answer=await supabase.from("mathlab_learning_annotations").upsert({
+       const result=await supabase.from("mathlab_learning_annotations").upsert({
          file_id:file.id,student_id:studentId,strokes:pad.getStrokes(),
-         note:textArea.value,comment:comment.value,updated_at:new Date().toISOString()
-       },{onConflict:"file_id,student_id"});
-       if(answer.error)throw answer.error;
-       if(current===rev)state.textContent="Οι σημειώσεις αποθηκεύτηκαν ✓";
-       else timer=setTimeout(save,500);
-     }catch(e){state.textContent="Δεν αποθηκεύτηκαν: "+(e?.message||String(e))}
+         note:textArea.value,comment:comment.value,submitted,updated_at:new Date().toISOString()
+       },{onConflict:"file_id,student_id"}).select("file_id").single();
+       if(result.error)throw result.error;
+       if(current===rev)state.textContent=submitted?
+         "Η εργασία υποβλήθηκε και εμφανίζεται στη διαχείριση ✓":
+         "Αποθηκεύτηκε ✓ — η εργασία εμφανίζεται στον διαχειριστή.";
+       else timer=setTimeout(save,450);
+     }catch(e){state.textContent="Δεν αποθηκεύτηκε: "+(e?.message||String(e))}
      finally{saving=false}
    }
-   function schedule(){rev++;clearTimeout(timer);timer=setTimeout(save,800);state.textContent="Εκκρεμεί αποθήκευση..."}
+   function schedule(){submitted=false;updateSubmitLabel();rev++;clearTimeout(timer);timer=setTimeout(save,850);state.textContent="Εκκρεμεί αποθήκευση..."}
    textArea.oninput=schedule;comment.oninput=schedule;
-   const ext=learningExt(file.original_name);
-   if(["png","jpg","jpeg","gif","webp","mp4","webm","mov","pdf","txt","csv"].includes(ext)){
+   complete.onclick=()=>{submitted=true;updateSubmitLabel();rev++;clearTimeout(timer);save()};
+   const showTypes=["png","jpg","jpeg","gif","webp","mp4","webm","mov","pdf","txt","csv"];
+   if(showTypes.includes(ext)){
      const stored=await supabase.storage.from(learningBucket).download(file.storage_path);
      if(stored.error)throw stored.error;
      if(!workspace.isConnected)return;
      const blob=stored.data;
-     if(["png","jpg","jpeg","gif","webp"].includes(ext)){
-       const img=document.createElement("img");img.src=URL.createObjectURL(blob);img.alt=file.original_name;
-       img.onload=()=>URL.revokeObjectURL(img.src);preview.append(img);
-       status.textContent="Προβολή φωτογραφίας μέσα στην εφαρμογή.";
-     }else if(["mp4","webm","mov"].includes(ext)){
-       const video=document.createElement("video");video.controls=true;video.controlsList="nodownload";video.disablePictureInPicture=true;
-       const url=URL.createObjectURL(blob);video.src=url;video.onended=()=>{};
-       preview.append(video);status.textContent="Προβολή βίντεο μέσα στην εφαρμογή.";
-     }else if(["txt","csv"].includes(ext)){
-       const pre=document.createElement("pre");pre.style.whiteSpace="pre-wrap";pre.style.overflowWrap="anywhere";pre.textContent=(await blob.text()).slice(0,100000);
-       preview.append(pre);status.textContent="Προβολή κειμένου μέσα στην εφαρμογή.";
-     }else{
-       status.textContent="Φόρτωση σελίδων PDF...";
+     if(pdf){
+       status.textContent="Προετοιμασία PDF για γραφή επάνω στις σελίδες...";
        try{
-         const pdfjs=await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs");
-         pdfjs.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-         const data=new Uint8Array(await blob.arrayBuffer());
-         const doc=await pdfjs.getDocument({data}).promise;
-         const limit=Math.min(doc.numPages,12);
-         for(let n=1;n<=limit;n++){
-           const page=await doc.getPage(n);
-           const viewport=page.getViewport({scale:1.35});
-           const canvas=document.createElement("canvas");canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-           canvas.style.maxWidth="100%";canvas.style.height="auto";canvas.style.display="block";canvas.style.margin="12px auto";
-           await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
-           if(!workspace.isConnected)return;
-           preview.append(canvas);
-         }
-         status.textContent="PDF: "+limit+" από "+doc.numPages+" σελίδες σε προστατευμένη προβολή χωρίς κουμπί λήψης.";
-       }catch(error){status.textContent="Το PDF δεν εμφανίστηκε σε αυτή τη συσκευή. Μπορείς να χρησιμοποιήσεις τις σημειώσεις και τις ασκήσεις.";preview.textContent="Δεν υποστηρίζεται η προεπισκόπηση PDF σε αυτή τη συσκευή."}
+         pad=await learningRenderWritablePdf(preview,blob,{
+           editable:"student",
+           studentStrokes:a.data?.strokes||[],
+           teacherStrokes:feedback.data?.correction_strokes||[],
+           onStudentChange:()=>schedule()
+         });
+         status.textContent="PDF: "+pad.pages+" σελίδες. Επίλεξε «⌨ Πληκτρολόγιο» και πάτησε στο σημείο όπου θέλεις να γράψεις.";
+       }catch(error){
+         status.textContent="Δεν εμφανίστηκε το PDF: "+(error?.message||String(error));
+         const fallback=document.createElement("div");padHolder.classList.remove("hide");
+         fallback.append(learningTextElement("p","Η γραφή πάνω στο PDF δεν είναι διαθέσιμη. Οι σημειώσεις μπορούν να αποθηκευτούν εδώ."));
+         workspace.insertBefore(fallback,preview);
+         fallback.append(padHolder);
+         pad=learningCreatePad(padHolder,a.data?.strokes||[],()=>schedule());
+       }
+     }else if(["png","jpg","jpeg","gif","webp"].includes(ext)){
+       const img=document.createElement("img");const url=URL.createObjectURL(blob);
+       img.src=url;img.alt=file.original_name;img.onload=()=>URL.revokeObjectURL(url);preview.append(img);
+       status.textContent="Προβολή εικόνας μέσα στην εφαρμογή.";
+     }else if(["mp4","webm","mov"].includes(ext)){
+       const video=document.createElement("video");video.controls=true;video.controlsList="nodownload";
+       video.disablePictureInPicture=true;video.src=URL.createObjectURL(blob);preview.append(video);
+       status.textContent="Προβολή βίντεο μέσα στην εφαρμογή.";
+     }else{
+       const pre=document.createElement("pre");pre.style.whiteSpace="pre-wrap";pre.style.overflowWrap="anywhere";
+       pre.textContent=(await blob.text()).slice(0,100000);preview.append(pre);
+       status.textContent="Προβολή κειμένου μέσα στην εφαρμογή.";
      }
    }else{
-     preview.textContent="Το αρχείο Word/PowerPoint/Office έχει αποθηκευτεί ιδιωτικά. Η προεπισκόπησή του δεν υποστηρίζεται ακόμη. Οι σημειώσεις και τα σχόλιά σου λειτουργούν κανονικά μέσα στην εφαρμογή.";
-     status.textContent="Εργασία πάνω στο μάθημα χωρίς λήψη αρχείου.";
+     preview.textContent="Προεπισκόπηση Word/PowerPoint δεν υποστηρίζεται ακόμη. Οι σημειώσεις και τα σχόλια παραμένουν διαθέσιμα.";
+     status.textContent="Εργασία μέσα στην εφαρμογή χωρίς κουμπί λήψης.";
    }
  }catch(error){status.textContent="Δεν φορτώθηκε το αρχείο ή οι σημειώσεις: "+(error?.message||String(error))}
 }
-
-
 async function studentGradesView(user){
  if(profile?.role!=="student")return;
  $("view").innerHTML='<div class="card"><h2>Οι βαθμοί μου</h2><p id="personalGradesStatus" role="status">Φόρτωση βαθμολογιών...</p><div id="personalGradesList"></div></div>';
