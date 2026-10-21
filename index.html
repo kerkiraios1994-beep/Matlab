@@ -12,8 +12,8 @@ async function removeStudent(id,button) {
   button.disabled=true;
   status.textContent="Έλεγχος συνδεδεμένων εγγραφών πριν τη διαγραφή...";
   try{
-    const tables=["lessons","invoices","enrollments"];
-    const results=await Promise.all(tables.map(table=>supabase.from(table).select("id",{head:true,count:"exact"}).eq("student_id",id)));
+    const tables=["lessons","invoices","enrollments","parent_students"];
+    const results=await Promise.all(tables.map(table=>supabase.from(table).select("student_id",{head:true,count:"exact"}).eq("student_id",id)));
     for(const result of results)if(result.error)throw result.error;
     const linked=results.reduce((total,item)=>total+(item.count||0),0);
     if(linked>0) {
@@ -36,7 +36,7 @@ async function removeStudent(id,button) {
       card.prepend(note);
     }
   }catch(error){
-    if(status?.isConnected)status.textContent="Η διαγραφή δεν επιβεβαιώθηκε: "+(error?.message||"Άγνωστο σφάλμα.")+".";
+    if(status?.isConnected)status.textContent="Η διαγραφή δεν επιβεβαιώθηκε: "+(error?.message||error?.details||error?.hint||String(error)||"Άγνωστο σφάλμα.")+".";
   }finally{
     deletingStudent=false;
     if(button.isConnected)button.disabled=false;
