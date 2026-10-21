@@ -1093,23 +1093,92 @@ async function studentLearningFileWorkspace(studentId,file,listRoot){
  }catch(error){status.textContent="Δεν φορτώθηκε το αρχείο ή οι σημειώσεις: "+(error?.message||String(error))}
 }
 
+
 async function studentGradesView(user){
  if(profile?.role!=="student")return;
  $("view").innerHTML='<div class="card"><h2>Οι βαθμοί μου</h2><p id="personalGradesStatus" role="status">Φόρτωση βαθμολογιών...</p><div id="personalGradesList"></div></div>';
  const status=$("personalGradesStatus"),list=$("personalGradesList");
  try{
    const student=await studentRecordFor(user);
-   const result=await supabase.from("grades")
-     .select("title,score,max_score,graded_at").eq("student_id",student.id)
-     .order("graded_at",{ascending:false});
-   if(result.error)throw result.error;
-   if(!status.isConnected)return;
-   status.textContent="Εδώ εμφανίζονται αποκλειστικά οι δικές σου βαθμολογίες.";
-   const grades=result.data||[];
-   list.innerHTML=grades.length?'<ul>'+grades.map(g=>'<li><strong>'+escapeHtml(g.title)+'</strong> — '+escapeHtml(g.score)+' / '+escapeHtml(g.max_score)+(g.graded_at?' · '+escapeHtml(g.graded_at):'')+'</li>').join("")+'</ul>':'<p class="muted">Δεν έχουν καταχωριστεί ακόμη βαθμοί.</p>';
+   const [old,newGrades]=await Promise.all([
+     supabase.from("grades").select("title,score,max_score,graded_at").eq("student_id",student.id).order("graded_at",{ascending:false}),
+     supabase.from("mathlab_learning_reviews").select("exercise_id,score,max_score,feedback,updated_at")
+       .eq("student_id",student.id).order("updated_at",{ascending:false})
+   ]);
+   if(old.error)throw old.error;if(newGrades.error)throw newGrades.error;
+   const reviews=newGrades.data||[],traditional=old.data||[];
+   const questions=reviews.length?await supabase.from("mathlab_learning_exercises")
+     .select("id,question,unit_id").in("id",reviews.map(x=>x.exercise_id)):{data:[],error:null};
+   if(questions.error)throw questions.error;
+   const exerciseMap=new Map((questions.data||[]).map(x=>[x.id,x]));
+   const unitIds=[...new Set((questions.data||[]).map(x=>x.unit_id))];
+   const units=unitIds.length?await supabase.from("mathlab_learning_units")
+       .select("id,title").in("id",unitIds):{data:[],error:null};
+   if(units.error)throw units.error;
+   const titleMap=new Map((units.data||[]).map(x=>[x.id,x.title]));
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   status.textContent="Οι βαθμοί καταχωρίζονται αυτόματα μόλις η κυρία Φωτεινή διορθώσει τις ασκήσεις σου.";
+   const lessonTitle=learningTextElement("h3","Βαθμοί ασκήσεων");list.append(lessonTitle);
+   if(!reviews.length)list.append(learningTextElement("p","Δεν έχει βαθμολογηθεί ακόμη κάποια άσκηση.","muted"));
+   for(const review of reviews){
+     const q=exerciseMap.get(review.exercise_id);
+     const div=document.createElement("div");div.className="learningCard";
+     div.append(learningTextElement("strong",(titleMap.get(q?.unit_id)||"Μάθημα")+" — "+(q?.question||"Άσκηση")));
+     div.append(learningTextElement("p","Βαθμός: "+review.score+" / "+review.max_score));
+     if(review.feedback)div.append(learningTextElement("p","Σχόλιο κυρίας Φωτεινής: "+review.feedback));
+     list.append(div);
+   }
+   list.append(learningTextElement("h3","Βαθμοί τμημάτων"));
+   if(!traditional.length)list.append(learningTextElement("p","Δεν υπάρχουν ακόμη άλλοι βαθμοί.","muted"));
+   for(const grade of traditional){
+     const div=document.createElement("div");div.className="learningCard";
+     div.append(learningTextElement("strong",grade.title));
+     div.append(learningTextElement("p",grade.score+" / "+grade.max_score+(grade.graded_at?" · "+grade.graded_at:"")));
+     list.append(div);
+   }
  }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
 }
-async function view(table){if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
+async function learningAdminGradesView(){
+ if(profile?.role!=="admin")return;
+ $("view").innerHTML='<div class="card"><h2>Βαθμολογίες μαθητών</h2><p id="learningAdminGradesStatus" role="status">Φόρτωση...</p><div id="learningAdminGradesList"></div></div>';
+ const status=$("learningAdminGradesStatus"),list=$("learningAdminGradesList");
+ try{
+   const [students,reviews,traditional,exercises,units]=await Promise.all([
+     supabase.from("students").select("id,full_name"),
+     supabase.from("mathlab_learning_reviews").select("student_id,exercise_id,score,max_score,feedback,updated_at").order("updated_at",{ascending:false}).limit(500),
+     supabase.from("grades").select("student_id,title,score,max_score,graded_at").order("graded_at",{ascending:false}).limit(500),
+     supabase.from("mathlab_learning_exercises").select("id,question,unit_id"),
+     supabase.from("mathlab_learning_units").select("id,title")
+   ]);
+   for(const r of [students,reviews,traditional,exercises,units])if(r.error)throw r.error;
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   const studentNames=new Map((students.data||[]).map(x=>[x.id,x.full_name]));
+   const questionMap=new Map((exercises.data||[]).map(x=>[x.id,x]));
+   const unitMap=new Map((units.data||[]).map(x=>[x.id,x.title]));
+   list.append(learningTextElement("h3","Βαθμοί από διορθωμένες ασκήσεις"));
+   if(!reviews.data?.length)list.append(learningTextElement("p","Δεν έχουν βαθμολογηθεί ακόμη ασκήσεις.","muted"));
+   for(const r of reviews.data||[]){
+     const question=questionMap.get(r.exercise_id),div=document.createElement("div");
+     div.className="learningCard";
+     div.append(learningTextElement("strong",(studentNames.get(r.student_id)||"Μαθητής")+" — "+(unitMap.get(question?.unit_id)||"Μάθημα")));
+     div.append(learningTextElement("p",(question?.question||"Άσκηση")+" | "+r.score+" / "+r.max_score));
+     if(r.feedback)div.append(learningTextElement("p","Σχόλιο: "+r.feedback));
+     list.append(div);
+   }
+   list.append(learningTextElement("h3","Άλλες βαθμολογίες τμημάτων"));
+   if(!traditional.data?.length)list.append(learningTextElement("p","Δεν υπάρχουν βαθμολογίες τμημάτων.","muted"));
+   for(const g of traditional.data||[]){
+     const div=document.createElement("div");div.className="learningCard";
+     div.append(learningTextElement("strong",(studentNames.get(g.student_id)||"Μαθητής")+" — "+g.title));
+     div.append(learningTextElement("p",g.score+" / "+g.max_score+" · "+g.graded_at));
+     list.append(div);
+   }
+   status.textContent="Οι βαθμοί από τις διορθώσεις εμφανίζονται αυτόματα εδώ και στον λογαριασμό του μαθητή.";
+ }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
+}
+async function view(table){if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
   let user=signedInUser;
   if(!user){
