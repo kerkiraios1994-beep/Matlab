@@ -497,6 +497,7 @@ async function learningTeacherExerciseReview(root,answer,question,studentName,ex
 
 async function learningTeacherFileReview(root,annotation,file,studentName,existing){
  const section=document.createElement("section");section.className="learningQuestion";
+ root.append(section);
  section.append(learningTextElement("h3",studentName+" — "+(file?.original_name||"Αρχείο")));
  section.append(learningTextElement("p","Σημειώσεις μαθητή:\n"+(annotation.note||"—")+
    "\nΣχόλιο μαθητή:\n"+(annotation.comment||"—")));
@@ -569,7 +570,6 @@ async function learningTeacherFileReview(root,annotation,file,studentName,existi
    }catch(e){state.textContent="Δεν αποθηκεύτηκαν: "+(e?.message||String(e))}
    finally{save.disabled=false}
  };
- root.append(section);
 }
 
 async function refreshLearningAdminList(){
@@ -1134,6 +1134,7 @@ async function studentLearningUnitView(user,studentId,unit){
    exerciseRoot.append(learningTextElement("h3","Ασκήσεις"));
    const questions=qr.data||[];
    if(!questions.length){exerciseRoot.append(learningTextElement("p","Δεν υπάρχουν ακόμη ασκήσεις."));return}
+   const unitHasPdf=(fr.data||[]).some(file=>learningExt(file.original_name)==="pdf");
    const [ar,rr]=await Promise.all([
      supabase.from("mathlab_learning_answers").select("exercise_id,answer_text,drawing_data,submitted").eq("student_id",studentId).in("exercise_id",questions.map(q=>q.id)),
      supabase.from("mathlab_learning_reviews").select("exercise_id,score,max_score,feedback,correction_drawing").eq("student_id",studentId).in("exercise_id",questions.map(q=>q.id))
@@ -1145,7 +1146,18 @@ async function studentLearningUnitView(user,studentId,unit){
      card.append(learningTextElement("h4","Άσκηση "+(index+1)),learningTextElement("p",q.question));
      const textArea=document.createElement("textarea");textArea.maxLength=10000;textArea.placeholder="Γράψε τη λύση σου...";
      textArea.value=answers.get(q.id)?.answer_text||"";const keyboard=document.createElement("button");keyboard.type="button";keyboard.className="alt";keyboard.textContent="⌨ Πληκτρολόγιο";keyboard.onclick=()=>{textArea.focus();textArea.scrollIntoView({block:"nearest",behavior:"smooth"})};card.append(keyboard,textArea);
-     const canvasBox=document.createElement("div");card.append(learningTextElement("p","Χειρόγραφη λύση:"));card.append(canvasBox);
+     const canvasBox=document.createElement("div");
+     if(unitHasPdf){
+       canvasBox.classList.add("hide");
+       const optional=document.createElement("button");optional.type="button";optional.className="alt";
+       optional.textContent="Προαιρετικός ξεχωριστός χώρος γραφής";
+       optional.onclick=()=>{canvasBox.classList.toggle("hide");optional.textContent=canvasBox.classList.contains("hide")?
+         "Προαιρετικός ξεχωριστός χώρος γραφής":"Κλείσιμο ξεχωριστού χώρου γραφής"};
+       card.append(learningTextElement("p","Για χειρόγραφη λύση γράψε κατευθείαν στο PDF του μαθήματος.","learningHint"),optional);
+     }else{
+       card.append(learningTextElement("p","Χειρόγραφη λύση:"));
+     }
+     card.append(canvasBox);
      const canvas=document.createElement("canvas");canvas.width=800;canvas.height=380;canvas.className="learningDraw";
      const tools=document.createElement("div");tools.className="learningInline";
      const pen=document.createElement("button");pen.type="button";pen.className="alt";pen.textContent="✏ Μολύβι";
@@ -1264,7 +1276,6 @@ async function studentLearningFileWorkspace(studentId,file,listRoot){
      workspace.append(box);
    }
    async function save(){
-     if(!workspace.isConnected)return;
      if(saving){timer=setTimeout(save,700);return}
      saving=true;const current=rev;
      state.textContent="Αυτόματη αποθήκευση...";
