@@ -346,4 +346,83 @@ async function view(table){if(table==="invites")return invitesView();if(table===
    if(inviteToken)$("inviteStatus").textContent=msg;
    else $("message").textContent=msg;
  }
-};$("nav").onclick=e=>{const id=e.target.dataset.tab;if(id&&profile?.role==="admin")view(id)};$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});start();</script></body></html>
+};$("nav").onclick=e=>{const id=e.target.dataset.tab;if(id&&profile?.role==="admin")view(id)};
+$("inviteSignupForm").onsubmit=async event=>{
+ event.preventDefault();
+ const form=event.currentTarget;
+ if(!form.reportValidity())return;
+ const button=$("signupStudentBtn"),status=$("inviteStatus");
+ if(button.disabled)return;
+ const fd=new FormData(form);
+ const first=String(fd.get("first_name")||"").trim();
+ const last=String(fd.get("last_name")||"").trim();
+ const phone=String(fd.get("phone")||"").trim();
+ const grade=String(fd.get("grade")||"").trim();
+ const email=String(fd.get("email")||"").trim().toLowerCase();
+ const password=String(fd.get("password")||"");
+ if(first.length<2||last.length<2||phone.length<5||grade.length<1){
+   status.textContent="Συμπλήρωσε σωστά το όνομα, το επίθετο, το τηλέφωνο και την τάξη.";
+   return;
+ }
+ if(!inviteToken){
+   status.textContent="Η εγγραφή απαιτεί προσωπικό σύνδεσμο πρόσκλησης.";
+   return;
+ }
+ button.disabled=true;
+ status.textContent="Επεξεργασία εγγραφής...";
+ const meta={
+   mathlab_first_name:first,
+   mathlab_last_name:last,
+   mathlab_phone:phone,
+   mathlab_grade:grade
+ };
+ try {
+   if(form.dataset.mode==="claim"){
+     const save=await supabase.auth.updateUser({data:meta});
+     if(save.error)throw save.error;
+     if(!save.data?.user)throw new Error("Δεν ενημερώθηκαν τα στοιχεία του λογαριασμού.");
+     status.textContent="Σύνδεση με τη μαθητική εγγραφή...";
+     await start(save.data.user);
+   }else{
+     if(password.length<12)throw new Error("Ο κωδικός πρέπει να έχει τουλάχιστον 12 χαρακτήρες.");
+     const signup=await supabase.auth.signUp({
+       email,
+       password,
+       options:{
+         emailRedirectTo:location.origin+location.pathname+"?invite="+encodeURIComponent(inviteToken),
+         data:meta
+       }
+     });
+     if(signup.error)throw signup.error;
+     if(signup.data?.session&&signup.data?.user){
+       await start(signup.data.user);
+     }else{
+       status.textContent="Ο λογαριασμός υποβλήθηκε. Άνοιξε το email επιβεβαίωσης για να ενεργοποιήσεις την πρόσκληση. Αν δεν το βρεις, έλεγξε και τα ανεπιθύμητα. Μετά την επιβεβαίωση, κάνε είσοδο από τον προσωπικό σύνδεσμο.";
+     }
+   }
+ }catch(error){
+   status.textContent="Δεν ολοκληρώθηκε η εγγραφή: "+(error?.message||String(error));
+ }finally{
+   button.disabled=false;
+ }
+};
+$("inviteExistingLogin").onclick=async()=>{
+ const btn=$("inviteExistingLogin");
+ btn.disabled=true;
+ try{
+   const session=await supabase.auth.getSession();
+   if(session.data?.session)await supabase.auth.signOut();
+   const form=$("inviteSignupForm");
+   form.dataset.mode="";
+   form.elements.email.readOnly=false;
+   form.elements.password.disabled=false;
+   form.elements.password.required=true;
+   $("signupStudentBtn").textContent="Δημιουργία λογαριασμού";
+   profile=null;
+   screen("auth");
+   $("message").textContent="Κάνε είσοδο με τον προσωπικό σου λογαριασμό μαθητή. Ο σύνδεσμος πρόσκλησης παραμένει ενεργός.";
+ }catch(error){
+   $("inviteStatus").textContent="Δεν ολοκληρώθηκε η αποσύνδεση: "+(error?.message||String(error));
+ }finally{btn.disabled=false}
+}
+;$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{await supabase.auth.signOut();screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});start();</script></body></html>
