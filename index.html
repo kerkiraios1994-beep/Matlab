@@ -232,6 +232,106 @@ async function invitesView(){
    finally{if(button.isConnected)button.disabled=false}
  };
 }
+
+function studentMonthCalendar(lessons) {
+ const root=$("myLessons");
+ if(!root)return;
+ root.replaceChildren();
+ const title=document.createElement("h3");
+ title.textContent="Το ημερολόγιο μαθημάτων μου";
+ const help=document.createElement("p");
+ help.className="muted";
+ help.textContent="Πάτησε σε μια ημερομηνία για να δεις την ώρα και το μάθημά σου. Το πρόγραμμα είναι μόνο για προβολή.";
+ const bar=document.createElement("div");
+ bar.className="monthbar";
+ const previous=document.createElement("button");
+ previous.type="button";previous.className="alt";previous.textContent="‹ Προηγούμενος";
+ const monthName=document.createElement("strong");
+ monthName.setAttribute("aria-live","polite");
+ const next=document.createElement("button");
+ next.type="button";next.className="alt";next.textContent="Επόμενος ›";
+ bar.append(previous,monthName,next);
+ const grid=document.createElement("div");
+ grid.className="monthgrid";
+ grid.setAttribute("aria-label","Μηνιαίο ημερολόγιο μαθημάτων");
+ const detailsTitle=document.createElement("h3");
+ const detailsList=document.createElement("ul");
+ detailsList.setAttribute("aria-live","polite");
+ root.append(title,help,bar,grid,detailsTitle,detailsList);
+ const today=new Date();
+ let shownMonth=new Date(today.getFullYear(),today.getMonth(),1);
+ let selected=dateKey(today.getFullYear(),today.getMonth(),today.getDate());
+ const byDate=new Map();
+ for(const lesson of lessons){
+   const date=String(lesson.lesson_date||"");
+   if(!byDate.has(date))byDate.set(date,[]);
+   byDate.get(date).push(lesson);
+ }
+ for(const group of byDate.values())group.sort((x,y)=>String(x.lesson_time).localeCompare(String(y.lesson_time)));
+ function draw(){
+   const y=shownMonth.getFullYear(),m=shownMonth.getMonth();
+   monthName.textContent=new Intl.DateTimeFormat("el-GR",{month:"long",year:"numeric"}).format(shownMonth);
+   grid.replaceChildren();
+   for(const weekday of ["Δε","Τρ","Τε","Πε","Πα","Σα","Κυ"]){
+     const cell=document.createElement("div");
+     cell.className="weekday";cell.textContent=weekday;grid.append(cell);
+   }
+   const offset=(new Date(y,m,1).getDay()+6)%7;
+   for(let i=0;i<offset;i++){
+     const blank=document.createElement("div");
+     blank.className="daycell empty";grid.append(blank);
+   }
+   const days=new Date(y,m+1,0).getDate();
+   for(let d=1;d<=days;d++){
+     const key=dateKey(y,m,d);
+     const entries=byDate.get(key)||[];
+     const day=document.createElement("button");
+     day.type="button";day.className="daycell"+(key===selected?" current":"");
+     day.setAttribute("aria-label",String(d)+" "+monthName.textContent+" — "+entries.length+" μαθήματα");
+     day.setAttribute("aria-pressed",String(key===selected));
+     const number=document.createElement("span");
+     number.className="dateNum";number.textContent=String(d);day.append(number);
+     for(const item of entries.slice(0,2)){
+       const tag=document.createElement("span");
+       tag.className="eventchip";
+       tag.textContent=String(item.lesson_time||"").slice(0,5)+" "+String(item.subject||"");
+       day.append(tag);
+     }
+     if(entries.length>2){
+       const more=document.createElement("span");
+       more.className="eventchip";more.textContent="+"+(entries.length-2)+" ακόμη";
+       day.append(more);
+     }
+     day.onclick=()=>{selected=key;draw()};
+     grid.append(day);
+   }
+   detailsTitle.textContent="Μαθήματα για "+new Intl.DateTimeFormat("el-GR",{day:"numeric",month:"long",year:"numeric"}).format(new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))));
+   detailsList.replaceChildren();
+   const selectedLessons=byDate.get(selected)||[];
+   if(!selectedLessons.length){
+     const li=document.createElement("li");
+     li.textContent="Δεν έχεις μάθημα αυτή την ημέρα.";
+     detailsList.append(li);
+   }else{
+     for(const item of selectedLessons){
+       const li=document.createElement("li");
+       li.textContent=String(item.lesson_time||"").slice(0,5)+" — "+String(item.subject||"");
+       detailsList.append(li);
+     }
+   }
+ }
+ previous.onclick=()=>{
+   shownMonth=new Date(shownMonth.getFullYear(),shownMonth.getMonth()-1,1);
+   selected=dateKey(shownMonth.getFullYear(),shownMonth.getMonth(),1);
+   draw();
+ };
+ next.onclick=()=>{
+   shownMonth=new Date(shownMonth.getFullYear(),shownMonth.getMonth()+1,1);
+   selected=dateKey(shownMonth.getFullYear(),shownMonth.getMonth(),1);
+   draw();
+ };
+ draw();
+}
 async function studentHome(user){
  $("dashboard").querySelector("h1").textContent="Η προσωπική μου περιοχή";
  $("view").innerHTML='<div class="card"><h2>Το πρόγραμμά μου</h2><p id="personalStudentStatus" role="status">Φόρτωση μαθημάτων...</p><div id="myLessons"></div><div id="myTasks"></div><div id="myGrades"></div></div>';
@@ -240,28 +340,36 @@ async function studentHome(user){
    const s=await supabase.from("students").select("id,full_name,grade").eq("user_id",user.id).maybeSingle();
    if(s.error)throw s.error;
    if(!s.data){status.textContent="Δεν έχει συνδεθεί ακόμη μαθητική εγγραφή με τον λογαριασμό.";return}
-   status.textContent="Καλώς ήρθες, "+s.data.full_name+". Εδώ βλέπεις μόνο τα δικά σου στοιχεία.";
-   const [ls,en,gr]=await Promise.all([
-     supabase.from("lessons").select("lesson_date,lesson_time,subject").eq("student_id",s.data.id).order("lesson_date").order("lesson_time"),
+   status.textContent="Καλώς ήρθες, "+s.data.full_name+". Εδώ βλέπεις μόνο τα δικά σου μαθήματα.";
+   const ls=await supabase.from("lessons").select("lesson_date,lesson_time,subject").eq("student_id",s.data.id).order("lesson_date").order("lesson_time");
+   if(ls.error)throw ls.error;
+   studentMonthCalendar(ls.data||[]);
+   const [en,gr]=await Promise.all([
      supabase.from("enrollments").select("class_id").eq("student_id",s.data.id),
      supabase.from("grades").select("title,score,max_score,graded_at").eq("student_id",s.data.id).order("graded_at",{ascending:false})
    ]);
-   for(const item of [ls,en,gr])if(item.error)throw item.error;
-   const lessons=ls.data||[];
-   $("myLessons").innerHTML='<h3>Τα μαθήματά μου</h3>'+(lessons.length?'<ul>'+lessons.map(l=>'<li>'+escapeHtml(l.lesson_date)+" "+escapeHtml(String(l.lesson_time).slice(0,5))+" — "+escapeHtml(l.subject)+'</li>').join("")+'</ul>':'<p>Δεν έχουν προγραμματιστεί ακόμη μαθήματα.</p>');
-   const classIds=(en.data||[]).map(x=>x.class_id);
-   let tasks=[];
-   if(classIds.length){
-     const a=await supabase.from("assignments").select("title,description,due_date").in("class_id",classIds).order("due_date");
-     if(a.error)throw a.error;
-     tasks=a.data||[];
+   const tasksNode=$("myTasks"),gradesNode=$("myGrades");
+   if(en.error){
+     tasksNode.innerHTML='<h3>Οι εργασίες μου</h3><p class="muted">Οι εργασίες δεν είναι διαθέσιμες αυτή τη στιγμή.</p>';
+   }else{
+     const classIds=(en.data||[]).map(x=>x.class_id);
+     let tasks=[];
+     if(classIds.length){
+       const a=await supabase.from("assignments").select("title,description,due_date").in("class_id",classIds).order("due_date");
+       if(a.error){
+         tasksNode.innerHTML='<h3>Οι εργασίες μου</h3><p class="muted">Οι εργασίες δεν φορτώθηκαν.</p>';
+       }else tasks=a.data||[];
+     }
+     if(!tasksNode.innerHTML)tasksNode.innerHTML='<h3>Οι εργασίες μου</h3>'+(tasks.length?'<ul>'+tasks.map(t=>'<li><strong>'+escapeHtml(t.title)+'</strong>'+(t.due_date?" — έως "+escapeHtml(t.due_date):"")+(t.description?" — "+escapeHtml(t.description):"")+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη εργασίες.</p>');
    }
-   $("myTasks").innerHTML='<h3>Οι εργασίες μου</h3>'+(tasks.length?'<ul>'+tasks.map(t=>'<li><strong>'+escapeHtml(t.title)+'</strong>'+(t.due_date?" — έως "+escapeHtml(t.due_date):"")+(t.description?" — "+escapeHtml(t.description):"")+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη εργασίες.</p>');
-   const grades=gr.data||[];
-   $("myGrades").innerHTML='<h3>Οι βαθμοί μου</h3>'+(grades.length?'<ul>'+grades.map(g=>'<li>'+escapeHtml(g.title)+" — "+escapeHtml(g.score)+" / "+escapeHtml(g.max_score)+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη βαθμοί.</p>');
+   if(gr.error){
+     gradesNode.innerHTML='<h3>Οι βαθμοί μου</h3><p class="muted">Οι βαθμοί δεν είναι διαθέσιμοι αυτή τη στιγμή.</p>';
+   }else{
+     const grades=gr.data||[];
+     gradesNode.innerHTML='<h3>Οι βαθμοί μου</h3>'+(grades.length?'<ul>'+grades.map(g=>'<li>'+escapeHtml(g.title)+" — "+escapeHtml(g.score)+" / "+escapeHtml(g.max_score)+'</li>').join("")+'</ul>':'<p>Δεν υπάρχουν ακόμη βαθμοί.</p>');
+   }
  }catch(error){status.textContent="Πρόβλημα φόρτωσης προσωπικού προγράμματος: "+(error?.message||String(error))}
 }
-
 async function view(table){if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
   let user=signedInUser;
