@@ -5,39 +5,52 @@ async function removeStudent(id,button) {
   if(profile?.role!=="admin" || deletingStudent)return;
   const student=studentRecords.find(item=>item.id===id);
   if(!student)return;
-  if(!window.confirm("Να διαγραφεί οριστικά ο μαθητής: "+student.full_name+";\n\nΑυτή η ενέργεια δεν αναιρείται. Αν υπάρχουν συνδεδεμένα μαθήματα, τμήματα ή οικονομικές εγγραφές, η διαγραφή δεν θα επιτραπεί."))return;
   const status=$("deleteStudentStatus");
+  if(!status)return;
   status.classList.remove("hide");
   deletingStudent=true;
   button.disabled=true;
-  status.textContent="Έλεγχος συνδεδεμένων εγγραφών πριν τη διαγραφή...";
-  try{
+  status.textContent="Έλεγχος μαθημάτων και συνδεδεμένων εγγραφών...";
+  try {
     const tables=["lessons","invoices","enrollments","parent_students"];
-    const results=await Promise.all(tables.map(table=>supabase.from(table).select("student_id",{head:true,count:"exact"}).eq("student_id",id)));
-    for(const result of results)if(result.error)throw result.error;
-    const linked=results.reduce((total,item)=>total+(item.count||0),0);
-    if(linked>0) {
-      status.textContent="Δεν έγινε διαγραφή. Υπάρχουν "+linked+" συνδεδεμένες εγγραφές. Για να σταματήσει να εμφανίζεται ως ενεργός, πάτησε «Επεξεργασία» και αποεπίλεξε «Ενεργός μαθητής».";
+    const responses=await Promise.all(tables.map(table=>supabase.from(table).select("student_id",{head:true,count:"exact"}).eq("student_id",id)));
+    for(const res of responses)if(res.error)throw res.error;
+    const counts=responses.map(res=>res.count??0);
+    const lessonCount=counts[0];
+    const protectedCount=counts.slice(1).reduce((sum,n)=>sum+n,0);
+    if(protectedCount>0) {
+      status.textContent="Δεν μπορεί να διαγραφεί ο μαθητής «"+student.full_name+"»: υπάρχουν "+protectedCount+" εγγραφές σε τμήματα, οικονομικά στοιχεία ή συνδέσεις γονέων. Χρησιμοποίησε την Επεξεργασία → Ανενεργός μαθητής.";
       return;
     }
-    status.textContent="Διαγραφή μαθητή...";
-    const res=await supabase.from("students").delete().eq("id",id).select("id");
-    if(res.error)throw res.error;
-    if(!res.data?.some(row=>row.id===id))throw new Error("Η βάση δεν επιβεβαίωσε τη διαγραφή.");
+    const prompt="Θέλεις να διαγράψεις οριστικά τον μαθητή «"+student.full_name+"»;"+
+      (lessonCount>0?"\n\nΜαζί θα διαγραφούν οριστικά και "+lessonCount+" προγραμματισμένα μαθήματα στο ημερολόγιο.":"")+
+      "\n\nΗ ενέργεια δεν αναιρείται. Πάτησε ΟΚ μόνο αν συμφωνείς.";
+    if(!window.confirm(prompt)) {
+      status.textContent="Η διαγραφή ακυρώθηκε. Δεν άλλαξε κανένα στοιχείο.";
+      return;
+    }
+    status.textContent="Οριστική διαγραφή...";
+    const {data,error}=await supabase.rpc("delete_mathlab_student",{
+      p_student_id:id,
+      p_student_name:student.full_name,
+      p_delete_lessons:lessonCount>0
+    });
+    if(error)throw error;
+    if(!data?.deleted || data.student_id!==id)throw new Error("Η βάση δεν επιβεβαίωσε την ενέργεια.");
     const verify=await supabase.from("students").select("id").eq("id",id).maybeSingle();
     if(verify.error)throw verify.error;
-    if(verify.data)throw new Error("Η εγγραφή παραμένει στη βάση.");
+    if(verify.data)throw new Error("Ο μαθητής εμφανίζεται ακόμη στη βάση. Ανανέωσε πριν επιχειρήσεις ξανά.");
     await studentsView();
     const card=$("view").querySelector(".card");
-    if(card){
+    if(card) {
       const note=document.createElement("p");
       note.setAttribute("role","status");
-      note.textContent="Ο μαθητής «"+student.full_name+"» διαγράφηκε από τη βάση.";
+      note.textContent="Διαγράφηκε ο μαθητής «"+student.full_name+"»"+(data.deleted_lessons>0?" μαζί με "+data.deleted_lessons+" μάθημα/μαθήματα.":".");
       card.prepend(note);
     }
-  }catch(error){
-    if(status?.isConnected)status.textContent="Η διαγραφή δεν επιβεβαιώθηκε: "+(error?.message||error?.details||error?.hint||String(error)||"Άγνωστο σφάλμα.")+".";
-  }finally{
+  }catch(error) {
+    if(status?.isConnected)status.textContent="Η διαγραφή δεν ολοκληρώθηκε: "+(error?.message||error?.details||error?.hint||String(error))+".";
+  }finally {
     deletingStudent=false;
     if(button.isConnected)button.disabled=false;
   }
