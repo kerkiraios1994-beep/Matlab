@@ -1372,6 +1372,93 @@ async function studentGradesView(user){
    }
  }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
 }
+
+async function learningAdminAssignmentsView(){
+ if(profile?.role!=="admin")return;
+ $("view").innerHTML='<div class="card"><h2>Εργασίες μαθητών</h2>'+
+   '<p class="learningHint">Εδώ εμφανίζονται αυτομάτως οι αποθηκευμένες λύσεις, τα PDF με σημειώσεις και τα σχόλια των μαθητών. Άνοιξε μία εργασία για διόρθωση και βαθμολόγηση.</p>'+
+   '<button type="button" class="alt" id="refreshSubmittedWork">Ανανέωση εργασιών</button>'+
+   '<p id="assignmentsAdminStatus" role="status">Φόρτωση εργασιών...</p><div id="assignmentsAdminList"></div></div>';
+ const status=$("assignmentsAdminStatus"),root=$("assignmentsAdminList");
+ async function load(){
+   status.textContent="Φόρτωση τελευταίων εργασιών...";
+   const [students,units,questions,files,answers,notes,reviews,feedback]=await Promise.all([
+     supabase.from("students").select("id,full_name"),
+     supabase.from("mathlab_learning_units").select("id,title"),
+     supabase.from("mathlab_learning_exercises").select("id,unit_id,question"),
+     supabase.from("mathlab_learning_files").select("id,unit_id,original_name,storage_path"),
+     supabase.from("mathlab_learning_answers").select("exercise_id,student_id,answer_text,drawing_data,submitted,updated_at").order("updated_at",{ascending:false}).limit(500),
+     supabase.from("mathlab_learning_annotations").select("file_id,student_id,note,comment,strokes,submitted,updated_at").order("updated_at",{ascending:false}).limit(500),
+     supabase.from("mathlab_learning_reviews").select("exercise_id,student_id,score,max_score,feedback,correction_drawing"),
+     supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,score,max_score,feedback,correction_strokes")
+   ]);
+   for(const result of [students,units,questions,files,answers,notes,reviews,feedback])if(result.error)throw result.error;
+   if(!root.isConnected)return;
+   root.replaceChildren();
+   const names=new Map((students.data||[]).map(s=>[s.id,s.full_name]));
+   const titles=new Map((units.data||[]).map(u=>[u.id,u.title]));
+   const qMap=new Map((questions.data||[]).map(q=>[q.id,q]));
+   const fMap=new Map((files.data||[]).map(f=>[f.id,f]));
+   const rMap=new Map((reviews.data||[]).map(x=>[x.exercise_id+":"+x.student_id,x]));
+   const fbMap=new Map((feedback.data||[]).map(x=>[x.file_id+":"+x.student_id,x]));
+   const items=[];
+   for(const answer of answers.data||[]){
+     const q=qMap.get(answer.exercise_id);
+     const review=rMap.get(answer.exercise_id+":"+answer.student_id);
+     items.push({kind:"exercise",item:answer,object:q,
+       studentName:names.get(answer.student_id)||"Μαθητής",
+       title:titles.get(q?.unit_id)||"Μάθημα",
+       detail:q?.question||"Άσκηση",submitted:answer.submitted,
+       graded:review?.score!=null,grade:review,
+       updated_at:answer.updated_at});
+   }
+   for(const note of notes.data||[]){
+     const file=fMap.get(note.file_id);
+     const review=fbMap.get(note.file_id+":"+note.student_id);
+     items.push({kind:"pdf",item:note,object:file,
+       studentName:names.get(note.student_id)||"Μαθητής",
+       title:titles.get(file?.unit_id)||"Μάθημα",
+       detail:file?.original_name||"Έγγραφο",submitted:note.submitted,
+       graded:review?.score!=null,grade:review,
+       updated_at:note.updated_at});
+   }
+   items.sort((x,y)=>Date.parse(y.updated_at)-Date.parse(x.updated_at));
+   status.textContent=items.length?
+      items.length+" αποθηκευμένες εργασίες. Οι τελευταίες εμφανίζονται πρώτες.":
+      "Δεν έχουν καταχωριστεί ακόμη λύσεις ή σημειώσεις μαθητών.";
+   for(const item of items){
+     const section=document.createElement("section");section.className="learningCard";
+     section.append(learningTextElement("h3",item.studentName+" — "+item.title));
+     section.append(learningTextElement("p",item.detail));
+     const desc=(item.submitted?"✓ Ολοκληρωμένη":"Αυτόματη αποθήκευση — σε εξέλιξη")+
+       " · "+new Date(item.updated_at).toLocaleString("el-GR")+
+       (item.graded?" · Βαθμός: "+item.grade.score+" / "+item.grade.max_score:" · Χωρίς βαθμό");
+     section.append(learningTextElement("p",desc,"learningHint"));
+     const btn=document.createElement("button");btn.type="button";btn.className="alt";
+     btn.textContent="Άνοιγμα, διόρθωση και βαθμός";
+     const review=document.createElement("div");
+     btn.onclick=async()=>{
+       if(review.childNodes.length){review.replaceChildren();return}
+       btn.disabled=true;review.textContent="Φόρτωση διορθώσεων...";
+       try{
+         review.replaceChildren();
+         if(item.kind==="exercise")
+           await learningTeacherExerciseReview(review,item.item,item.object,item.studentName,item.grade);
+         else
+           await learningTeacherFileReview(review,item.item,item.object,item.studentName,item.grade);
+       }catch(e){review.textContent="Δεν φορτώθηκε η εργασία: "+(e?.message||String(e))}
+       finally{btn.disabled=false}
+     };
+     section.append(btn,review);
+     root.append(section);
+   }
+ }
+ $("refreshSubmittedWork").onclick=async()=>{
+   try{await load()}catch(e){status.textContent="Δεν φορτώθηκαν οι εργασίες: "+(e?.message||String(e))}
+ };
+ try{await load()}catch(e){status.textContent="Δεν φορτώθηκαν οι εργασίες: "+(e?.message||String(e))}
+}
+
 async function learningAdminGradesView(){
  if(profile?.role!=="admin")return;
  $("view").innerHTML='<div class="card"><h2>Βαθμολογίες μαθητών</h2><p id="learningAdminGradesStatus" role="status">Φόρτωση...</p><div id="learningAdminGradesList"></div></div>';
@@ -1411,7 +1498,7 @@ async function learningAdminGradesView(){
    status.textContent="Οι βαθμοί από τις διορθώσεις εμφανίζονται αυτόματα εδώ και στον λογαριασμό του μαθητή.";
  }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
 }
-async function view(table){if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
+async function view(table){if(table==="assignments")return learningAdminAssignmentsView();if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
   let user=signedInUser;
   if(!user){
