@@ -1531,6 +1531,105 @@ async function studentGradesView(user){
  }catch(error){if(status.isConnected)status.textContent="Δεν φορτώθηκαν οι βαθμοί: "+(error?.message||String(error))}
 }
 
+
+async function learningTeacherStudentUploadReview(root,upload,studentName,existing){
+ const section=document.createElement("section");section.className="learningQuestion";
+ root.append(section);
+ section.append(learningTextElement("h3","Έγγραφο μαθητή: "+studentName));
+ section.append(learningTextElement("p",upload.original_name+" ("+learningFriendlyBytes(upload.size_bytes)+")"));
+ if(upload.comment)section.append(learningTextElement("p","Μήνυμα μαθητή: "+upload.comment));
+ const status=learningTextElement("p","Φόρτωση εγγράφου...","learningHint");
+ const preview=document.createElement("div");preview.className="learningPreview";
+ section.append(status,preview);
+ const ext=learningExt(upload.original_name);
+ let pad={getStrokes:()=>Array.isArray(existing?.correction_strokes)?existing.correction_strokes.slice():[]};
+ try{
+   if(["pdf","png","jpg","jpeg","webp","gif","mp4","webm","mov","txt","csv"].includes(ext)){
+     const downloaded=await supabase.storage.from(learningBucket).download(upload.storage_path);
+     if(downloaded.error)throw downloaded.error;
+     const blob=downloaded.data;
+     if(ext==="pdf"){
+       pad=await learningRenderWritablePdf(preview,blob,{
+         editable:"teacher",
+         teacherStrokes:existing?.correction_strokes||[]
+       });
+       status.textContent="Γράψε διορθώσεις πάνω στο έγγραφο του μαθητή, με μολύβι, γόμα ή πληκτρολόγιο.";
+     }else if(["png","jpg","jpeg","webp","gif"].includes(ext)){
+       const img=document.createElement("img");const url=URL.createObjectURL(blob);
+       img.src=url;img.alt=upload.original_name;img.onload=()=>URL.revokeObjectURL(url);
+       preview.append(img);status.textContent="Προβολή εικόνας μαθητή.";
+       const draw=document.createElement("div");
+       section.append(learningTextElement("p","Χειρόγραφες διορθώσεις εικόνας"),draw);
+       pad=learningCreatePad(draw,existing?.correction_strokes||[],null);
+     }else if(["mp4","webm","mov"].includes(ext)){
+       const video=document.createElement("video");
+       video.controls=true;video.controlsList="nodownload";video.src=URL.createObjectURL(blob);
+       video.style.maxWidth="100%";preview.append(video);
+       status.textContent="Προβολή βίντεο.";
+     }else{
+       const pre=document.createElement("pre");pre.style.whiteSpace="pre-wrap";pre.style.overflowWrap="anywhere";
+       pre.textContent=(await blob.text()).slice(0,100000);preview.append(pre);
+       status.textContent="Προβολή κειμένου.";
+     }
+   }else{
+     status.textContent="Για Word/PowerPoint και άλλα αρχεία μπορείς να ανοίξεις ένα ιδιωτικό αντίγραφο για έλεγχο.";
+     const open=document.createElement("button");open.type="button";open.className="alt";
+     open.textContent="Άνοιγμα αρχείου ως διαχειριστής";
+     open.onclick=async()=>{
+       open.disabled=true;
+       try{
+         const result=await supabase.storage.from(learningBucket).download(upload.storage_path);
+         if(result.error)throw result.error;
+         const url=URL.createObjectURL(result.data),a=document.createElement("a");
+         a.href=url;a.download=upload.original_name;
+         document.body.append(a);a.click();a.remove();
+         setTimeout(()=>URL.revokeObjectURL(url),15000);
+       }catch(e){status.textContent="Δεν άνοιξε το αρχείο: "+(e?.message||String(e))}
+       finally{open.disabled=false}
+     };
+     section.append(open);
+   }
+ }catch(e){status.textContent="Δεν εμφανίστηκε το αρχείο: "+(e?.message||String(e))}
+ const feedback=document.createElement("textarea");
+ feedback.className="chatTextarea";feedback.maxLength=5000;
+ feedback.placeholder="Σχόλιο στην εργασία του μαθητή…";
+ feedback.value=existing?.feedback||"";
+ const scores=document.createElement("div");scores.className="learningInline";
+ const label=document.createElement("label");label.textContent="Βαθμός";
+ const score=document.createElement("input");score.type="number";score.min=0;score.max=100;score.step=.25;
+ score.style.width="95px";score.value=existing?.score??"";label.append(score);
+ const maxLabel=document.createElement("label");maxLabel.textContent="Με άριστα";
+ const max=document.createElement("input");max.type="number";max.min=1;max.max=100;max.step=.25;
+ max.style.width="95px";max.value=existing?.max_score??20;maxLabel.append(max);
+ scores.append(label,maxLabel);
+ const save=document.createElement("button");save.type="button";save.textContent="Αποθήκευση σχολίου και βαθμού";
+ const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
+ section.append(learningTextElement("h4","Διόρθωση κυρίας Φωτεινής"),feedback,scores,save,state);
+ save.onclick=async()=>{
+   const val=score.value.trim(),maxVal=max.value.trim();
+   const n=Number(val),limit=Number(maxVal);
+   if(val!==""&&(!maxVal||!Number.isFinite(n)||!Number.isFinite(limit)||n<0||limit<=0||limit>100||n>limit)){
+     state.textContent="Ο βαθμός πρέπει να είναι από 0 έως το άριστα (μέχρι 100).";return;
+   }
+   save.disabled=true;state.textContent="Αποθήκευση διορθώσεων...";
+   try{
+     const auth=await supabase.auth.getUser();
+     if(auth.error)throw auth.error;
+     if(!auth.data?.user)throw Error("Η σύνδεση έληξε.");
+     const data={
+       upload_id:upload.id,score:val===""?null:n,max_score:val===""?null:limit,
+       feedback:feedback.value,correction_strokes:pad.getStrokes(),
+       reviewed_by:auth.data.user.id,updated_at:new Date().toISOString()
+     };
+     const result=await supabase.from("mathlab_learning_upload_reviews").upsert(data,
+       {onConflict:"upload_id"}).select("upload_id").single();
+     if(result.error)throw result.error;
+     state.textContent="✓ Το σχόλιο και ο βαθμός αποθηκεύτηκαν και εμφανίζονται στον μαθητή.";
+   }catch(e){state.textContent="Δεν αποθηκεύτηκαν οι διορθώσεις: "+(e?.message||String(e))}
+   finally{save.disabled=false}
+ };
+}
+
 async function learningAdminAssignmentsView(){
  if(profile?.role!=="admin")return;
  $("view").innerHTML='<div class="card"><h2>Εργασίες μαθητών</h2>'+
@@ -1540,7 +1639,7 @@ async function learningAdminAssignmentsView(){
  const status=$("assignmentsAdminStatus"),root=$("assignmentsAdminList");
  async function load(){
    status.textContent="Φόρτωση τελευταίων εργασιών...";
-   const [students,units,questions,files,answers,notes,reviews,feedback]=await Promise.all([
+   const [students,units,questions,files,answers,notes,reviews,feedback,uploaded,uploadReviews]=await Promise.all([
      supabase.from("students").select("id,full_name"),
      supabase.from("mathlab_learning_units").select("id,title"),
      supabase.from("mathlab_learning_exercises").select("id,unit_id,question"),
@@ -1548,9 +1647,14 @@ async function learningAdminAssignmentsView(){
      supabase.from("mathlab_learning_answers").select("exercise_id,student_id,answer_text,drawing_data,submitted,updated_at").order("updated_at",{ascending:false}).limit(500),
      supabase.from("mathlab_learning_annotations").select("file_id,student_id,note,comment,strokes,submitted,updated_at").order("updated_at",{ascending:false}).limit(500),
      supabase.from("mathlab_learning_reviews").select("exercise_id,student_id,score,max_score,feedback,correction_drawing"),
-     supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,score,max_score,feedback,correction_strokes")
+     supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,score,max_score,feedback,correction_strokes"),
+     supabase.from("mathlab_learning_student_uploads")
+       .select("id,unit_id,student_id,storage_path,original_name,mime_type,size_bytes,comment,created_at")
+       .order("created_at",{ascending:false}).limit(500),
+     supabase.from("mathlab_learning_upload_reviews")
+       .select("upload_id,score,max_score,feedback,correction_strokes")
    ]);
-   for(const result of [students,units,questions,files,answers,notes,reviews,feedback])if(result.error)throw result.error;
+   for(const result of [students,units,questions,files,answers,notes,reviews,feedback,uploaded,uploadReviews])if(result.error)throw result.error;
    if(!root.isConnected)return;
    root.replaceChildren();
    const names=new Map((students.data||[]).map(s=>[s.id,s.full_name]));
@@ -1580,6 +1684,15 @@ async function learningAdminAssignmentsView(){
        graded:review?.score!=null,grade:review,
        updated_at:note.updated_at});
    }
+   const uploadReviewMap=new Map((uploadReviews.data||[]).map(r=>[r.upload_id,r]));
+   for(const upload of uploaded.data||[]){
+     const review=uploadReviewMap.get(upload.id);
+     items.push({kind:"upload",item:upload,object:upload,
+       studentName:names.get(upload.student_id)||"Μαθητής",
+       title:titles.get(upload.unit_id)||"Μάθημα",
+       detail:upload.original_name+" — αρχείο που ανέβασε ο μαθητής",
+       submitted:true,graded:review?.score!=null,grade:review,updated_at:upload.created_at});
+   }
    items.sort((x,y)=>Date.parse(y.updated_at)-Date.parse(x.updated_at));
    status.textContent=items.length?
       items.length+" αποθηκευμένες εργασίες. Οι τελευταίες εμφανίζονται πρώτες.":
@@ -1602,6 +1715,8 @@ async function learningAdminAssignmentsView(){
          review.replaceChildren();
          if(item.kind==="exercise")
            await learningTeacherExerciseReview(review,item.item,item.object,item.studentName,item.grade);
+         else if(item.kind==="upload")
+           await learningTeacherStudentUploadReview(review,item.item,item.studentName,item.grade);
          else
            await learningTeacherFileReview(review,item.item,item.object,item.studentName,item.grade);
        }catch(e){review.textContent="Δεν φορτώθηκε η εργασία: "+(e?.message||String(e))}
