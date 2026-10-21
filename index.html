@@ -1475,14 +1475,16 @@ async function studentGradesView(user){
  const status=$("personalGradesStatus"),list=$("personalGradesList");
  try{
    const student=await studentRecordFor(user);
-   const [old,newGrades,pdfGrades]=await Promise.all([
+   const [old,newGrades,pdfGrades,uploads,uploadedScores]=await Promise.all([
      supabase.from("grades").select("title,score,max_score,graded_at").eq("student_id",student.id).order("graded_at",{ascending:false}),
      supabase.from("mathlab_learning_reviews").select("exercise_id,score,max_score,feedback,updated_at")
        .eq("student_id",student.id).order("updated_at",{ascending:false}),
      supabase.from("mathlab_learning_file_feedback").select("file_id,score,max_score,feedback,updated_at")
-       .eq("student_id",student.id).not("score","is",null).order("updated_at",{ascending:false})
+       .eq("student_id",student.id).not("score","is",null).order("updated_at",{ascending:false}),
+     supabase.from("mathlab_learning_student_uploads").select("id,unit_id,original_name").eq("student_id",student.id),
+     supabase.from("mathlab_learning_upload_reviews").select("upload_id,score,max_score,feedback").not("score","is",null)
    ]);
-   if(old.error)throw old.error;if(newGrades.error)throw newGrades.error;if(pdfGrades.error)throw pdfGrades.error;
+   if(old.error)throw old.error;if(newGrades.error)throw newGrades.error;if(pdfGrades.error)throw pdfGrades.error;if(uploads.error)throw uploads.error;if(uploadedScores.error)throw uploadedScores.error;
    const reviews=newGrades.data||[],traditional=old.data||[];
    const questions=reviews.length?await supabase.from("mathlab_learning_exercises")
      .select("id,question,unit_id").in("id",reviews.map(x=>x.exercise_id)):{data:[],error:null};
@@ -1493,7 +1495,7 @@ async function studentGradesView(user){
      .select("id,unit_id,original_name").in("id",pdfRows.map(x=>x.file_id)):{data:[],error:null};
    if(pdfFiles.error)throw pdfFiles.error;
    const fileMap=new Map((pdfFiles.data||[]).map(x=>[x.id,x]));
-   const unitIds=[...new Set((questions.data||[]).map(x=>x.unit_id).concat((pdfFiles.data||[]).map(x=>x.unit_id)))];
+   const unitIds=[...new Set((questions.data||[]).map(x=>x.unit_id).concat((pdfFiles.data||[]).map(x=>x.unit_id),(uploads.data||[]).map(x=>x.unit_id)))];
    const units=unitIds.length?await supabase.from("mathlab_learning_units")
        .select("id,title").in("id",unitIds):{data:[],error:null};
    if(units.error)throw units.error;
@@ -1519,6 +1521,17 @@ async function studentGradesView(user){
      box.append(learningTextElement("p","Βαθμός: "+grade.score+" / "+grade.max_score));
      if(grade.feedback)box.append(learningTextElement("p","Σχόλιο κυρίας Φωτεινής: "+grade.feedback));
      list.append(box);
+   }
+   list.append(learningTextElement("h3","Βαθμοί εγγράφων που ανέβασα"));
+   const uploadMap=new Map((uploads.data||[]).map(x=>[x.id,x]));
+   const myGraded=(uploadedScores.data||[]).filter(x=>uploadMap.has(x.upload_id));
+   if(!myGraded.length)list.append(learningTextElement("p","Δεν έχουν βαθμολογηθεί ακόμη δικά σου αρχεία.","muted"));
+   for(const g of myGraded){
+     const item=uploadMap.get(g.upload_id),card=document.createElement("div");card.className="learningCard";
+     card.append(learningTextElement("strong",(titleMap.get(item.unit_id)||"Μάθημα")+" — "+item.original_name));
+     card.append(learningTextElement("p","Βαθμός: "+g.score+" / "+g.max_score));
+     if(g.feedback)card.append(learningTextElement("p","Σχόλιο κυρίας Φωτεινής: "+g.feedback));
+     list.append(card);
    }
    list.append(learningTextElement("h3","Βαθμοί τμημάτων"));
    if(!traditional.length)list.append(learningTextElement("p","Δεν υπάρχουν ακόμη άλλοι βαθμοί.","muted"));
@@ -1737,16 +1750,18 @@ async function learningAdminGradesView(){
  $("view").innerHTML='<div class="card"><h2>Βαθμολογίες μαθητών</h2><p id="learningAdminGradesStatus" role="status">Φόρτωση...</p><div id="learningAdminGradesList"></div></div>';
  const status=$("learningAdminGradesStatus"),list=$("learningAdminGradesList");
  try{
-   const [students,reviews,traditional,exercises,units,pdfGrades,pdfFiles]=await Promise.all([
+   const [students,reviews,traditional,exercises,units,pdfGrades,pdfFiles,uploaded,uploadedScores]=await Promise.all([
      supabase.from("students").select("id,full_name"),
      supabase.from("mathlab_learning_reviews").select("student_id,exercise_id,score,max_score,feedback,updated_at").order("updated_at",{ascending:false}).limit(500),
      supabase.from("grades").select("student_id,title,score,max_score,graded_at").order("graded_at",{ascending:false}).limit(500),
      supabase.from("mathlab_learning_exercises").select("id,question,unit_id"),
      supabase.from("mathlab_learning_units").select("id,title"),
      supabase.from("mathlab_learning_file_feedback").select("student_id,file_id,score,max_score,feedback,updated_at").not("score","is",null).order("updated_at",{ascending:false}).limit(500),
-     supabase.from("mathlab_learning_files").select("id,unit_id,original_name")
+     supabase.from("mathlab_learning_files").select("id,unit_id,original_name"),
+     supabase.from("mathlab_learning_student_uploads").select("id,student_id,unit_id,original_name"),
+     supabase.from("mathlab_learning_upload_reviews").select("upload_id,score,max_score,feedback").not("score","is",null)
    ]);
-   for(const r of [students,reviews,traditional,exercises,units,pdfGrades,pdfFiles])if(r.error)throw r.error;
+   for(const r of [students,reviews,traditional,exercises,units,pdfGrades,pdfFiles,uploaded,uploadedScores])if(r.error)throw r.error;
    if(!list.isConnected)return;
    list.replaceChildren();
    const studentNames=new Map((students.data||[]).map(x=>[x.id,x.full_name]));
@@ -1770,6 +1785,17 @@ async function learningAdminGradesView(){
      box.append(learningTextElement("strong",(studentNames.get(r.student_id)||"Μαθητής")+" — "+(unitMap.get(file?.unit_id)||"Μάθημα")));
      box.append(learningTextElement("p",(file?.original_name||"PDF")+" | "+r.score+" / "+r.max_score));
      if(r.feedback)box.append(learningTextElement("p","Σχόλιο: "+r.feedback));
+     list.append(box);
+   }
+   list.append(learningTextElement("h3","Βαθμοί εγγράφων μαθητών"));
+   const uploadedMap=new Map((uploaded.data||[]).map(x=>[x.id,x]));
+   const scoredUploads=(uploadedScores.data||[]).filter(x=>uploadedMap.has(x.upload_id));
+   if(!scoredUploads.length)list.append(learningTextElement("p","Δεν υπάρχουν βαθμολογημένα έγγραφα μαθητών.","muted"));
+   for(const g of scoredUploads){
+     const u=uploadedMap.get(g.upload_id),box=document.createElement("div");box.className="learningCard";
+     box.append(learningTextElement("strong",(studentNames.get(u.student_id)||"Μαθητής")+" — "+(unitMap.get(u.unit_id)||"Μάθημα")));
+     box.append(learningTextElement("p",u.original_name+" | "+g.score+" / "+g.max_score));
+     if(g.feedback)box.append(learningTextElement("p","Σχόλιο: "+g.feedback));
      list.append(box);
    }
    list.append(learningTextElement("h3","Άλλες βαθμολογίες τμημάτων"));
