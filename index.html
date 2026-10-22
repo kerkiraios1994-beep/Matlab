@@ -1740,6 +1740,193 @@ async function studentLessonsView(user){
 
 
 
+
+/* Local MathLab document scanner. All image editing and PDF creation stays on-device
+   until the user explicitly submits their work. Original camera pictures remain intact. */
+function mlScanIsImage(file){
+ return Boolean(file && (String(file.type||"").startsWith("image/")||["jpg","jpeg","png","webp","gif","heic","heif"].includes(learningExt(file.name))));
+}
+const mlScanFullCrop=()=>({x:0,y:0,w:1,h:1});
+function mlScanClamp(n,min,max){return Math.min(max,Math.max(min,n))}
+async function mlScanLoadImage(file){
+ const normalized=await learningPrepareCameraPhoto(file);
+ const url=URL.createObjectURL(normalized);
+ try{
+   const image=new Image();image.src=url;
+   if(typeof image.decode==="function")await image.decode();
+   else await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error("Δεν διαβάστηκε η φωτογραφία."))});
+   if(!image.naturalWidth||!image.naturalHeight)throw Error("Δεν έχει διαστάσεις η φωτογραφία.");
+   return image;
+ }finally{URL.revokeObjectURL(url)}
+}
+function mlScanRotatedSize(image,angle){
+ return (angle%180)?{w:image.naturalHeight,h:image.naturalWidth}:{w:image.naturalWidth,h:image.naturalHeight};
+}
+function mlScanDrawImage(ctx,image,angle,rotW,rotH){
+ ctx.save();
+ ctx.translate(rotW/2,rotH/2);ctx.rotate((angle*Math.PI)/180);
+ ctx.drawImage(image,-image.naturalWidth/2,-image.naturalHeight/2);
+ ctx.restore();
+}
+async function mlScanJpeg(item,maxSide=2100){
+ const image=await mlScanLoadImage(item.file);
+ const angle=((Number(item.rotation||0)%360)+360)%360;
+ const rotated=mlScanRotatedSize(image,angle);
+ const crop=item.crop||mlScanFullCrop();
+ const x=mlScanClamp(crop.x||0,0,.98),y=mlScanClamp(crop.y||0,0,.98);
+ const w=mlScanClamp(crop.w||1,.02,1-x),z=mlScanClamp(crop.h||1,.02,1-y);
+ // Reduce canvas memory before image rotation and JPEG conversion.
+ const scale=Math.min(1,maxSide/Math.max(rotated.w*w,rotated.h*z),3200/Math.max(rotated.w,rotated.h));
+ const width=Math.max(1,Math.round(rotated.w*w*scale));
+ const height=Math.max(1,Math.round(rotated.h*z*scale));
+ const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;
+ const ctx=canvas.getContext("2d",{alpha:false});
+ if(!ctx)throw Error("Δεν ανοίγει η επεξεργασία εικόνας στη συσκευή.");
+ ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
+ ctx.save();
+ ctx.scale(scale,scale);
+ ctx.translate(-rotated.w*x,-rotated.h*y);
+ mlScanDrawImage(ctx,image,angle,rotated.w,rotated.h);
+ ctx.restore();
+ const blob=await new Promise((resolve,reject)=>{
+   canvas.toBlob(x=>x?resolve(x):reject(Error("Δεν δημιουργήθηκε η επεξεργασμένη φωτογραφία.")),"image/jpeg",0.84);
+ });
+ return {blob,width,height};
+}
+async function mlScanPdf(items,onProgress){
+ if(!items.length)throw Error("Δεν έχουν προστεθεί φωτογραφίες.");
+ const {PDFDocument}=await import("https://esm.sh/pdf-lib@1.17.1");
+ const pdf=await PDFDocument.create();
+ pdf.setTitle("MathLab — Εργασία");
+ pdf.setCreator("MathLab");
+ for(const [idx,item] of items.entries()){
+   onProgress?.("Προετοιμασία σελίδας "+(idx+1)+"/"+items.length+"...");
+   const converted=await mlScanJpeg(item,2000);
+   const image=await pdf.embedJpg(await converted.blob.arrayBuffer());
+   const ratio=converted.width/converted.height;
+   const pageWidth=ratio>=1?Math.min(795,580*ratio):Math.max(300,780*ratio);
+   const pageHeight=pageWidth/ratio;
+   const page=pdf.addPage([pageWidth,pageHeight]);
+   page.drawImage(image,{x:0,y:0,width:pageWidth,height:pageHeight});
+ }
+ onProgress?.("Σύνθεση PDF...");
+ const result=await pdf.save({useObjectStreams:true});
+ if(result.byteLength>learningMaxFileSize)throw Error("Το PDF ξεπερνά τα 50 MB. Στείλε τις σελίδες σε δύο παρτίδες.");
+ const date=new Date(),stamp=date.getFullYear()+String(date.getMonth()+1).padStart(2,"0")+String(date.getDate()).padStart(2,"0")+"_"+String(date.getHours()).padStart(2,"0")+String(date.getMinutes()).padStart(2,"0");
+ return new File([result],"MathLab_ergasia_"+stamp+".pdf",{type:"application/pdf",lastModified:Date.now()});
+}
+async function mlScanCropEditor(item,onSave){
+ const screen=learningOpenWorkspace("Επεξεργασία φωτογραφίας");
+ const status=learningTextElement("p","Φόρτωση φωτογραφίας...","learningHint");
+ screen.content.append(status);
+ const angleOriginal=(Number(item.rotation)||0+360)%360;
+ let angle=angleOriginal,crop={...(item.crop||mlScanFullCrop())},scaleView=1;
+ try{
+   const image=await mlScanLoadImage(item.file);
+   if(!screen.root.isConnected)return;
+   const hint=learningTextElement("p","Σύρε τις γωνίες του πλαισίου για περικοπή ή σύρε το πλαίσιο για μετακίνηση. Περιστροφή, επαναφορά και ζουμ λειτουργούν πριν αποθηκεύσεις.","learningHint");
+   const tools=document.createElement("div");tools.className="learningInline mlScanTools";
+   const left=document.createElement("button"),right=document.createElement("button"),reset=document.createElement("button");
+   const zoomMinus=document.createElement("button"),zoomPlus=document.createElement("button");
+   const zoomLabel=learningTextElement("span","100%","learningHint");
+   for(const [btn,label] of [[left,"↶ 90°"],[right,"↷ 90°"],[reset,"Όλη η εικόνα"],[zoomMinus,"−"],[zoomPlus,"+"]]){
+     btn.type="button";btn.className="alt";btn.textContent=label;tools.append(btn);
+   }
+   tools.append(zoomLabel);
+   const stage=document.createElement("div");stage.className="mlScanCropStage";
+   const canvas=document.createElement("canvas");canvas.className="mlScanCropCanvas";
+   canvas.style.touchAction="none";stage.append(canvas);
+   const save=document.createElement("button");save.type="button";save.textContent="✓ Αποθήκευση περικοπής";
+   const cancel=document.createElement("button");cancel.type="button";cancel.className="alt";cancel.textContent="Ακύρωση";
+   const finalRow=document.createElement("div");finalRow.className="learningInline";finalRow.append(save,cancel);
+   screen.content.append(hint,tools,stage,finalRow);
+   status.textContent="Επίλεξε το κομμάτι της φωτογραφίας που θέλεις να κρατήσεις.";
+   function draw(){
+     const {w,h}=mlScanRotatedSize(image,angle);
+     const scale=Math.min(1,1150/w,1300/h);
+     canvas.width=Math.max(2,Math.round(w*scale));
+     canvas.height=Math.max(2,Math.round(h*scale));
+     const ctx=canvas.getContext("2d");
+     ctx.save();ctx.scale(canvas.width/w,canvas.height/h);mlScanDrawImage(ctx,image,angle,w,h);ctx.restore();
+     const r={x:crop.x*canvas.width,y:crop.y*canvas.height,w:crop.w*canvas.width,h:crop.h*canvas.height};
+     ctx.fillStyle="#16182491";
+     ctx.fillRect(0,0,canvas.width,r.y);ctx.fillRect(0,r.y,r.x,r.h);
+     ctx.fillRect(r.x+r.w,r.y,canvas.width-r.x-r.w,r.h);
+     ctx.fillRect(0,r.y+r.h,canvas.width,canvas.height-r.y-r.h);
+     ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,canvas.width/310);
+     ctx.setLineDash([10,6]);ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2);ctx.setLineDash([]);
+     ctx.fillStyle="#fff";ctx.strokeStyle="#1b875e";ctx.lineWidth=2;
+     for(const pt of [[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h]]){
+       ctx.fillRect(pt[0]-7,pt[1]-7,14,14);ctx.strokeRect(pt[0]-7,pt[1]-7,14,14);
+     }
+     canvas.style.width=Math.round(Math.min(100,100*scaleView))+"%";
+     // For zoom > 100%, use a wider canvas so it can be scrolled in the stage.
+     if(scaleView>1)canvas.style.width=Math.round(100*scaleView)+"%";
+     zoomLabel.textContent=Math.round(scaleView*100)+"%";
+   }
+   let gesture=null;
+   const coords=event=>{
+     const rect=canvas.getBoundingClientRect();
+     return {x:mlScanClamp((event.clientX-rect.left)/rect.width,0,1),
+       y:mlScanClamp((event.clientY-rect.top)/rect.height,0,1)};
+   };
+   canvas.onpointerdown=event=>{
+     if(event.button!==undefined&&event.button!==0)return;
+     event.preventDefault();const p=coords(event);
+     const rad=Math.max(.012,30/canvas.getBoundingClientRect().width);
+     const corners=[
+       ["tl",crop.x,crop.y],["tr",crop.x+crop.w,crop.y],
+       ["bl",crop.x,crop.y+crop.h],["br",crop.x+crop.w,crop.y+crop.h]
+     ];
+     const close=corners.find(c=>Math.abs(p.x-c[1])<=rad&&Math.abs(p.y-c[2])<=rad);
+     let type=close?.[0]||"";
+     if(!type)type=(p.x>=crop.x&&p.x<=crop.x+crop.w&&p.y>=crop.y&&p.y<=crop.y+crop.h)?"move":"new";
+     gesture={type,start:p,initial:{...crop}};
+     try{canvas.setPointerCapture(event.pointerId)}catch(_){}
+   };
+   canvas.onpointermove=event=>{
+     if(!gesture)return;event.preventDefault();
+     const p=coords(event),g=gesture,o=g.initial;
+     const min=.045;
+     if(g.type==="move"){
+       crop={...o,x:mlScanClamp(o.x+p.x-g.start.x,0,1-o.w),
+         y:mlScanClamp(o.y+p.y-g.start.y,0,1-o.h)};
+     }else if(g.type==="new"){
+       const x=Math.min(g.start.x,p.x),y=Math.min(g.start.y,p.y);
+       crop={x,y,w:mlScanClamp(Math.abs(g.start.x-p.x),min,1-x),
+         h:mlScanClamp(Math.abs(g.start.y-p.y),min,1-y)};
+     }else{
+       const movingLeft=g.type.includes("l"),movingTop=g.type.includes("t");
+       const fixedX=movingLeft?o.x+o.w:o.x;
+       const fixedY=movingTop?o.y+o.h:o.y;
+       const movingX=movingLeft?mlScanClamp(p.x,0,fixedX-min):mlScanClamp(p.x,fixedX+min,1);
+       const movingY=movingTop?mlScanClamp(p.y,0,fixedY-min):mlScanClamp(p.y,fixedY+min,1);
+       crop={x:Math.min(movingX,fixedX),y:Math.min(movingY,fixedY),
+         w:Math.abs(movingX-fixedX),h:Math.abs(movingY-fixedY)};
+     }
+     draw();
+   };
+   const stop=()=>{gesture=null};
+   canvas.onpointerup=stop;canvas.onpointercancel=stop;
+   left.onclick=()=>{angle=(angle+270)%360;crop=mlScanFullCrop();draw()};
+   right.onclick=()=>{angle=(angle+90)%360;crop=mlScanFullCrop();draw()};
+   reset.onclick=()=>{crop=mlScanFullCrop();draw()};
+   zoomMinus.onclick=()=>{scaleView=Math.max(.6,Math.round((scaleView-.25)*100)/100);draw()};
+   zoomPlus.onclick=()=>{scaleView=Math.min(2.5,Math.round((scaleView+.25)*100)/100);draw()};
+   save.onclick=()=>{
+     item.rotation=angle;item.crop={...crop};
+     onSave?.();
+     screen.close();
+   };
+   cancel.onclick=()=>screen.close();
+   draw();
+ }catch(error){
+   status.textContent="Δεν ανοίγει η επεξεργασία φωτογραφίας: "+(error?.message||String(error));
+   const back=document.createElement("button");back.type="button";back.className="alt";back.textContent="Επιστροφή";
+   back.onclick=()=>screen.close();screen.content.append(back);
+ }
+}
+
 async function studentUploadDocumentPanel(studentId,unit,mount){
  if(profile?.role!=="student"||!mount.isConnected)return;
  const section=document.createElement("section");section.className="learningCard";
