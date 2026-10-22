@@ -77,7 +77,13 @@ body .pdfInlineText{background:#fff!important;color:#333!important}
 #mlAppearanceForm select,#mlChangePassword input{max-width:550px}
 #mlFontSizeLabel{min-width:53px;text-align:right}
 body #mlFontSize{accent-color:var(--ml-accent)!important}
-.learningFileHidden{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;left:-9999px!important}</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span>MathLab</span></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="invitePanel" class="card hide"><h1>Πρόσκληση μαθητή</h1><p>Δημιούργησε τον δικό σου λογαριασμό MathLab.</p><form id="inviteSignupForm"><label>Όνομα</label><input name="first_name" maxlength="60" autocomplete="given-name" required><label>Επίθετο</label><input name="last_name" maxlength="60" autocomplete="family-name" required><label>Τηλέφωνο</label><input type="tel" name="phone" maxlength="30" autocomplete="tel" required><label>Τάξη</label><input name="grade" maxlength="60" required placeholder="π.χ. Β΄ Γυμνασίου"><label>Email</label><input type="email" name="email" required autocomplete="email"><label>Προσωπικός κωδικός (τουλάχιστον 12 χαρακτήρες)</label><input type="password" name="password" minlength="12" required autocomplete="new-password"><button type="submit" id="signupStudentBtn">Δημιουργία λογαριασμού</button></form><button type="button" class="alt" id="inviteExistingLogin">Έχω ήδη λογαριασμό – Σύνδεση</button><p id="inviteStatus" role="status"></p></div><div id="recovery" class="card hide"><h1>Νέος κωδικός</h1><form id="passwordForm"><label>Ορισμός κωδικού (τουλάχιστον 12 χαρακτήρες)</label><input id="newPassword" type="password" minlength="12" required autocomplete="new-password"><button>Αποθήκευση</button></form><p id="recoveryMessage"></p></div><section id="dashboard" class="hide"><div class="card mathlabWelcome"><h1>Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab</h1><p id="profile" class="welcomeName"></p><button class="alt" id="logout">Έξοδος</button></div><div class="appToolbar"><strong id="currentSection">MathLab</strong></div><div id="menuBackdrop" class="menuBackdrop hide"></div><nav id="nav" class="sideMenu" aria-label="Ενότητες MathLab"></nav><div id="view"></div></section></main><script type="module">import{createClient}from "https://esm.sh/@supabase/supabase-js@2.76.1";const supabase=createClient("https://terlbwqcmrfsjhagtxch.supabase.co","sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0");const $=x=>document.getElementById(x),escapeHtml=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+.learningFileHidden{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;left:-9999px!important}
+.learningQueuedPhotos{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:9px;margin:10px 0}
+.learningQueuedPhoto{border:1px solid var(--ml-border,#e0cbd7);border-radius:10px;padding:7px;display:flex;flex-direction:column;gap:5px;align-items:flex-start;background:var(--ml-surface,#fff);overflow:hidden}
+.learningQueuedPhoto img{height:95px;max-width:100%;object-fit:contain;align-self:center}
+.learningQueuedPhoto span{font-size:12px;overflow-wrap:anywhere}
+.learningQueuedPhoto button{font-size:12px;padding:7px 10px}
+</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span>MathLab</span></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="invitePanel" class="card hide"><h1>Πρόσκληση μαθητή</h1><p>Δημιούργησε τον δικό σου λογαριασμό MathLab.</p><form id="inviteSignupForm"><label>Όνομα</label><input name="first_name" maxlength="60" autocomplete="given-name" required><label>Επίθετο</label><input name="last_name" maxlength="60" autocomplete="family-name" required><label>Τηλέφωνο</label><input type="tel" name="phone" maxlength="30" autocomplete="tel" required><label>Τάξη</label><input name="grade" maxlength="60" required placeholder="π.χ. Β΄ Γυμνασίου"><label>Email</label><input type="email" name="email" required autocomplete="email"><label>Προσωπικός κωδικός (τουλάχιστον 12 χαρακτήρες)</label><input type="password" name="password" minlength="12" required autocomplete="new-password"><button type="submit" id="signupStudentBtn">Δημιουργία λογαριασμού</button></form><button type="button" class="alt" id="inviteExistingLogin">Έχω ήδη λογαριασμό – Σύνδεση</button><p id="inviteStatus" role="status"></p></div><div id="recovery" class="card hide"><h1>Νέος κωδικός</h1><form id="passwordForm"><label>Ορισμός κωδικού (τουλάχιστον 12 χαρακτήρες)</label><input id="newPassword" type="password" minlength="12" required autocomplete="new-password"><button>Αποθήκευση</button></form><p id="recoveryMessage"></p></div><section id="dashboard" class="hide"><div class="card mathlabWelcome"><h1>Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab</h1><p id="profile" class="welcomeName"></p><button class="alt" id="logout">Έξοδος</button></div><div class="appToolbar"><strong id="currentSection">MathLab</strong></div><div id="menuBackdrop" class="menuBackdrop hide"></div><nav id="nav" class="sideMenu" aria-label="Ενότητες MathLab"></nav><div id="view"></div></section></main><script type="module">import{createClient}from "https://esm.sh/@supabase/supabase-js@2.76.1";const supabase=createClient("https://terlbwqcmrfsjhagtxch.supabase.co","sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0");const $=x=>document.getElementById(x),escapeHtml=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const mlColorThemes={
  rose:{accent:"#a36a89",soft:"#f8e9f0"},
  blue:{accent:"#245caa",soft:"#e5efff"},
@@ -1708,72 +1714,93 @@ async function studentLessonsView(user){
 }
 
 
+
 async function studentUploadDocumentPanel(studentId,unit,mount){
  if(profile?.role!=="student"||!mount.isConnected)return;
  const section=document.createElement("section");section.className="learningCard";
  section.append(learningTextElement("h3","Αποστολή εργασίας στην κυρία Φωτεινή"));
- section.append(learningTextElement("p","Φωτογράφισε μια άσκηση και θα αποσταλεί αυτόματα μόλις επιβεβαιώσεις τη λήψη στην κάμερα. Μπορείς επίσης να διαλέξεις έγγραφο από το κινητό (έως 50 MB).","learningHint"));
- const fileInput=document.createElement("input");
- fileInput.type="file";fileInput.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov,image/*";
- fileInput.className="learningFileHidden";
- fileInput.setAttribute("aria-label","Επιλογή εγγράφου από το κινητό");
+ section.append(learningTextElement("p","Τράβηξε διαδοχικές φωτογραφίες με την κάμερα ή διάλεξε πολλές από τη συλλογή. Έλεγξέ τες και πάτησε «Αποστολή εργασίας» μόνο όταν είναι όλες έτοιμες. Έως 50 MB ανά αρχείο.","learningHint"));
+ const gallery=document.createElement("input");
+ gallery.type="file";gallery.multiple=true;
+ gallery.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov,image/*";
+ gallery.className="learningFileHidden";
+ gallery.setAttribute("aria-label","Επιλογή πολλών φωτογραφιών ή εγγράφων από το κινητό");
  const choose=document.createElement("button");choose.type="button";choose.className="alt";
- choose.textContent="📎 Επιλογή αρχείου από το κινητό";
- choose.onclick=()=>fileInput.click();
- const cameraInput=document.createElement("input");
- cameraInput.type="file";cameraInput.accept="image/*";cameraInput.setAttribute("capture","environment");
- cameraInput.className="learningCameraInput";
- cameraInput.setAttribute("aria-label","Λήψη και άμεση αποστολή φωτογραφίας");
- const cameraLabel=document.createElement("label");
- cameraLabel.className="learningCameraLabel";cameraLabel.textContent="📷 Φωτογράφιση & άμεση αποστολή";
- cameraLabel.append(cameraInput);
- const chosen=learningTextElement("p","Δεν έχει επιλεγεί αρχείο.","learningHint");
- const comment=document.createElement("textarea");
- comment.className="chatTextarea";comment.maxLength=3000;
- comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή (για την επόμενη φωτογραφία)...";
- const submit=document.createElement("button");
- submit.type="button";submit.textContent="Αποστολή επιλεγμένου αρχείου";
- const retry=document.createElement("button");
- retry.type="button";retry.className="alt hide";retry.textContent="↻ Επανάληψη αποστολής";
+ choose.textContent="🖼 Επιλογή πολλών φωτογραφιών / αρχείων";
+ choose.onclick=()=>gallery.click();
+ const camera=document.createElement("input");
+ camera.type="file";camera.accept="image/*";camera.setAttribute("capture","environment");
+ camera.className="learningCameraInput";camera.setAttribute("aria-label","Φωτογράφιση εργασίας");
+ const cameraLabel=document.createElement("label");cameraLabel.className="learningCameraLabel";
+ cameraLabel.textContent="📷 Λήψη φωτογραφίας";cameraLabel.append(camera);
+ const chosen=learningTextElement("p","Δεν έχουν προστεθεί αρχεία.","learningHint");
+ const previews=document.createElement("div");previews.className="learningQueuedPhotos";
+ const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=3000;
+ comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή για όλη την εργασία...";
+ const submit=document.createElement("button");submit.type="button";submit.textContent="📤 Αποστολή εργασίας";
  const status=learningTextElement("p","","learningHint");
  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
  const list=document.createElement("div");
- section.append(fileInput,choose,cameraLabel,chosen,
-   learningTextElement("label","Μήνυμα για την εργασία"),comment,submit,retry,status,
-   learningTextElement("h4","Τα αρχεία που έχω στείλει"),list);
+ section.append(gallery,choose,cameraLabel,chosen,previews,
+   learningTextElement("label","Σχόλιο για την εργασία"),comment,submit,status,
+   learningTextElement("h4","Οι εργασίες που έχω στείλει"),list);
  mount.append(section);
-
- let sending=false,pendingRetry=null;
- function busy(value){
-   sending=value;
-   submit.disabled=value;choose.disabled=value;cameraInput.disabled=value;fileInput.disabled=value;
-   cameraLabel.style.opacity=value?"0.5":"1";
-   if(value)retry.classList.add("hide");
+ let queue=[],sending=false,pendingBatchId=null;
+ function setBusy(state){
+   sending=state;
+   submit.disabled=state;choose.disabled=state;gallery.disabled=state;camera.disabled=state;
+   cameraLabel.style.opacity=state?"0.5":"1";
  }
- fileInput.onchange=()=>{
+ function itemName(file){return String(file.name||"Φωτογραφία").slice(0,255)}
+ function updateQueue(){
+   previews.replaceChildren();
+   chosen.textContent=queue.length?
+     queue.length+" αρχείο/αρχεία έτοιμα για αποστολή. Δεν έχουν σταλεί ακόμη.":
+     "Δεν έχουν προστεθεί αρχεία.";
+   for(const [i,item] of queue.entries()){
+     const row=document.createElement("div");row.className="learningQueuedPhoto";
+     if(item.file.type.startsWith("image/")){
+       const thumb=document.createElement("img");thumb.alt="Προεπισκόπηση φωτογραφίας";
+       const previewUrl=URL.createObjectURL(item.file);
+       thumb.src=previewUrl;
+       thumb.onload=()=>URL.revokeObjectURL(previewUrl);
+       thumb.onerror=()=>{URL.revokeObjectURL(previewUrl);thumb.remove()};
+       row.append(thumb);
+     }
+     const details=document.createElement("span");details.textContent=itemName(item.file)+" · "+learningFriendlyBytes(item.file.size);
+     const remove=document.createElement("button");remove.type="button";remove.className="alt";
+     remove.textContent="Αφαίρεση";remove.disabled=sending;
+     remove.onclick=()=>{queue.splice(i,1);if(!queue.length)pendingBatchId=null;updateQueue()};
+     row.append(details,remove);previews.append(row);
+   }
+   submit.disabled=sending||queue.length===0;
+ }
+ function addFiles(files){
    if(sending)return;
-   pendingRetry=null;retry.classList.add("hide");
-   const file=fileInput.files?.[0];
-   chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο.";
-   status.textContent=file?"Πάτησε «Αποστολή επιλεγμένου αρχείου».":"";
- };
+   const incoming=Array.from(files||[]).filter(f=>f&&f.size>0);
+   if(!incoming.length)return;
+   if(queue.length+incoming.length>25){
+     status.textContent="Μπορείς να στείλεις μέχρι 25 αρχεία μαζί. Χώρισέ τα σε δύο εργασίες.";
+     return;
+   }
+   for(const file of incoming)queue.push({file});
+   status.textContent="Οι φωτογραφίες προστέθηκαν. Πρόσθεσε κι άλλες ή πάτησε «Αποστολή εργασίας».";
+   updateQueue();
+ }
+ gallery.onchange=()=>{addFiles(gallery.files);gallery.value=""};
+ camera.onchange=()=>{addFiles(camera.files);camera.value=""};
  async function listMyUploads(){
    const [sent,reviewed]=await Promise.all([
      supabase.from("mathlab_learning_student_uploads")
        .select("id,original_name,size_bytes,created_at,comment").eq("unit_id",unit.id).eq("student_id",studentId)
-       .order("created_at",{ascending:false}),
-     supabase.from("mathlab_learning_upload_reviews")
-       .select("upload_id,score,max_score,feedback")
+       .order("created_at",{ascending:false}).limit(150),
+     supabase.from("mathlab_learning_upload_reviews").select("upload_id,score,max_score,feedback")
    ]);
-   if(sent.error)throw sent.error;
-   if(reviewed.error)throw reviewed.error;
+   if(sent.error)throw sent.error;if(reviewed.error)throw reviewed.error;
    if(!list.isConnected)return;
    list.replaceChildren();
    const reviews=new Map((reviewed.data||[]).map(r=>[r.upload_id,r]));
-   if(!sent.data?.length){
-     list.append(learningTextElement("p","Δεν έχεις στείλει ακόμα κάποιο έγγραφο.","muted"));
-     return;
-   }
+   if(!sent.data?.length){list.append(learningTextElement("p","Δεν έχεις στείλει ακόμα κάποιο έγγραφο.","muted"));return}
    for(const file of sent.data||[]){
      const box=document.createElement("div");box.className="learningCard";
      box.append(learningTextElement("strong","📎 "+file.original_name));
@@ -1784,69 +1811,63 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
      list.append(box);
    }
  }
- async function sendDocument(original,fromCamera=false){
-   if(sending||!original)return false;
-   busy(true);
-   let file=original,uploadedPath=null,metadataSaved=false;
-   const message=comment.value.trim();
-   try{
-     if(String(file.type||"").startsWith("image/") || ["heic","heif"].includes(learningExt(file.name))){
-       status.textContent="Προετοιμασία φωτογραφίας...";
-       file=await learningPrepareCameraPhoto(file);
-     }
-     if(!file.size||file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name))){
-       throw Error("Επίλεξε αρχείο έως 50 MB σε υποστηριζόμενη μορφή.");
-     }
-     chosen.textContent=(fromCamera?"📷 ":"📎 ")+file.name+" — "+learningFriendlyBytes(file.size);
-     status.textContent="Αποστολή στην κυρία Φωτεινή... Μην κλείσεις ακόμη την εφαρμογή.";
-     const path="student-uploads/"+studentId+"/"+unit.id+"/"+crypto.randomUUID()+"."+learningExt(file.name);
-     const stored=await supabase.storage.from(learningBucket).upload(path,file,{
-       upsert:false,contentType:file.type||"application/octet-stream",cacheControl:"0"
-     });
-     if(stored.error)throw stored.error;
-     uploadedPath=path;
-     const saved=await supabase.from("mathlab_learning_student_uploads").insert({
-       student_id:studentId,unit_id:unit.id,storage_path:path,original_name:file.name,
-       mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:message
-     }).select("id").single();
-     if(saved.error)throw saved.error;
-     metadataSaved=true;
-     pendingRetry=null;
-     fileInput.value="";cameraInput.value="";comment.value="";
-     chosen.textContent="Το αρχείο αποστάλθηκε: "+file.name;
-     status.textContent="✓ Η φωτογραφία ή το αρχείο στάλθηκε! Θα εμφανιστεί στις «Εργασίες» της κυρίας Φωτεινής.";
-     // Keep successful submission even if the history refresh has a transient error.
-     try{await listMyUploads()}
-     catch(error){status.textContent+=" (Η λίστα δεν ανανεώθηκε: "+(error?.message||String(error))+")"}
-     return true;
-   }catch(error){
-     pendingRetry=file;
-     retry.classList.remove("hide");
-     status.textContent="✗ Η αποστολή απέτυχε. "+(error?.message||String(error))+". Πάτησε «Επανάληψη αποστολής», χωρίς να ξαναβγάλεις φωτογραφία.";
-     return false;
-   }finally{
-     if(uploadedPath&&!metadataSaved){
-       try{await supabase.storage.from(learningBucket).remove([uploadedPath])}catch(_){}
-     }
-     busy(false);
-     if(pendingRetry)retry.classList.remove("hide");
-   }
- }
- cameraInput.onchange=async()=>{
-   const photo=cameraInput.files?.[0];
-   if(!photo||sending)return;
-   // Taking and accepting the photograph is the only user confirmation required.
-   // Retain the File in memory, because browsers often clear the camera input.
-   const captured=photo;
-   cameraInput.value="";
-   await sendDocument(captured,true);
- };
  submit.onclick=async()=>{
-   const file=fileInput.files?.[0];
-   if(!file){status.textContent="Επίλεξε αρχείο από τη συσκευή, ή πάτησε το κουμπί της κάμερας για αυτόματη αποστολή.";return}
-   await sendDocument(file,false);
+   if(sending||!queue.length)return;
+   const batchId=pendingBatchId||crypto.randomUUID();
+   pendingBatchId=batchId;
+   const total=queue.length,message=comment.value.trim();
+   let sent=0,failed=null;
+   setBusy(true);
+   status.textContent="Ξεκίνησε η αποστολή "+total+" αρχείων. Μην κλείσεις την εφαρμογή.";
+   for(const item of queue.slice()){
+     const original=item.file;
+     let path=null,recorded=false;
+     try{
+       let file=original;
+       if(String(file.type||"").startsWith("image/")||["heic","heif"].includes(learningExt(file.name))){
+         status.textContent="Προετοιμασία φωτογραφίας "+(sent+1)+"/"+total+"...";
+         file=await learningPrepareCameraPhoto(file);
+       }
+       if(!file.size||file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name))){
+         throw Error("Μη υποστηριζόμενο αρχείο ή μέγεθος άνω των 50 MB: "+itemName(file));
+       }
+       status.textContent="Αποστολή αρχείου "+(sent+1)+"/"+total+": "+itemName(file);
+       path="student-uploads/"+studentId+"/"+unit.id+"/"+crypto.randomUUID()+"."+learningExt(file.name);
+       const stored=await supabase.storage.from(learningBucket).upload(path,file,{
+         upsert:false,contentType:file.type||"application/octet-stream",cacheControl:"0"
+       });
+       if(stored.error)throw stored.error;
+       const saved=await supabase.from("mathlab_learning_student_uploads").insert({
+         student_id:studentId,unit_id:unit.id,batch_id:batchId,
+         storage_path:path,original_name:itemName(file),
+         mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:message
+       }).select("id").single();
+       if(saved.error)throw saved.error;
+       recorded=true;sent++;
+       queue.splice(queue.indexOf(item),1);
+     }catch(error){
+       failed=(error?.message||String(error));
+       if(path&&!recorded){
+         try{await supabase.storage.from(learningBucket).remove([path])}catch(_){}
+       }
+       break;
+     }
+   }
+   setBusy(false);
+   updateQueue();
+   if(sent===total){
+     pendingBatchId=null;comment.value="";
+     status.textContent="✓ Στάλθηκαν και τα "+sent+" αρχεία στην κυρία Φωτεινή. Εμφανίζονται στις «Εργασίες» του διαχειριστή.";
+   }else{
+     status.textContent=(sent?("✓ Στάλθηκαν "+sent+" από τα "+total+" αρχεία. "):"")+
+       "Δεν ολοκληρώθηκε η αποστολή: "+(failed||"Άγνωστο σφάλμα")+
+       ". Οι υπόλοιπες φωτογραφίες παραμένουν εδώ για να ξαναπατήσεις «Αποστολή εργασίας».";
+   }
+   if(sent){
+     try{await listMyUploads()}catch(error){status.textContent+=" Η λίστα χρειάζεται ανανέωση: "+error.message}
+   }
  };
- retry.onclick=async()=>{if(pendingRetry)await sendDocument(pendingRetry,true)};
+ updateQueue();
  try{await listMyUploads()}
  catch(error){status.textContent="Δεν φορτώθηκαν τα απεσταλμένα αρχεία: "+(error?.message||String(error))}
 }
