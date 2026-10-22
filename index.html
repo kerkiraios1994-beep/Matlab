@@ -667,7 +667,7 @@ const learningExt=name=>String(name||"").split(".").pop().toLowerCase();
 function learningFriendlyBytes(size){return size>=1048576?(size/1048576).toFixed(1)+" MB":(size/1024).toFixed(1)+" KB"}
 
 async function learningPrepareCameraPhoto(file){
- if(!file||!String(file.type||"").startsWith("image/"))throw Error("Η κάμερα δεν επέστρεψε φωτογραφία.");
+ if(!file||(!String(file.type||"").startsWith("image/")&&!["jpg","jpeg","png","webp","gif","heic","heif"].includes(learningExt(file.name))))throw Error("Η κάμερα δεν επέστρεψε φωτογραφία.");
  if(file.size===0)throw Error("Η φωτογραφία είναι κενή. Δοκίμασε ξανά.");
  const ext=learningExt(file.name);
  if(["jpg","jpeg","png","webp","gif"].includes(ext)&&file.size<=learningMaxFileSize)return file;
@@ -1900,8 +1900,10 @@ async function mlScanPdf(items,onProgress){
    const ratio=converted.width/converted.height;
    const pageWidth=ratio>=1?Math.min(795,580*ratio):Math.max(300,780*ratio);
    const pageHeight=pageWidth/ratio;
-   const page=pdf.addPage([pageWidth,pageHeight]);
-   page.drawImage(image,{x:0,y:0,width:pageWidth,height:pageHeight});
+   const boundedScale=Math.min(1,1200/pageWidth,1200/pageHeight);
+   const finalWidth=pageWidth*boundedScale,finalHeight=pageHeight*boundedScale;
+   const page=pdf.addPage([finalWidth,finalHeight]);
+   page.drawImage(image,{x:0,y:0,width:finalWidth,height:finalHeight});
  }
  onProgress?.("Σύνθεση PDF...");
  const result=await pdf.save({useObjectStreams:true});
@@ -1913,7 +1915,7 @@ async function mlScanCropEditor(item,onSave){
  const screen=learningOpenWorkspace("Επεξεργασία φωτογραφίας");
  const status=learningTextElement("p","Φόρτωση φωτογραφίας...","learningHint");
  screen.content.append(status);
- const angleOriginal=(Number(item.rotation)||0+360)%360;
+ const angleOriginal=((Number(item.rotation||0)%360)+360)%360;
  let angle=angleOriginal,crop={...(item.crop||mlScanFullCrop())},scaleView=1;
  try{
    const image=await mlScanLoadImage(item.file);
@@ -1974,7 +1976,7 @@ async function mlScanCropEditor(item,onSave){
      ];
      const close=corners.find(c=>Math.abs(p.x-c[1])<=rad&&Math.abs(p.y-c[2])<=rad);
      let type=close?.[0]||"";
-     if(!type)type=(p.x>=crop.x&&p.x<=crop.x+crop.w&&p.y>=crop.y&&p.y<=crop.y+crop.h)?"move":"new";
+     if(!type)type=(crop.w>.99&&crop.h>.99)?"new":(p.x>=crop.x&&p.x<=crop.x+crop.w&&p.y>=crop.y&&p.y<=crop.y+crop.h)?"move":"new";
      gesture={type,start:p,initial:{...crop}};
      try{canvas.setPointerCapture(event.pointerId)}catch(_){}
    };
