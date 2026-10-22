@@ -737,7 +737,7 @@ async function learningAdminView(){
  '<form id="learningCreateForm">'+
  '<label>Τίτλος μαθήματος<input name="title" required maxlength="180" minlength="2" placeholder="π.χ. Εξισώσεις Α΄ Γυμνασίου"></label>'+
  '<label>Θεωρία / οδηγίες<textarea name="description" class="chatTextarea" maxlength="5000" placeholder="Σημειώσεις για το μάθημα..."></textarea></label>'+
- '<label>Αρχεία (μπορείς να επιλέξεις πολλά)<input type="file" id="learningUploadFiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,image/*,video/*"></label>'+ 
+ '<label>Αρχεία (μπορείς να επιλέξεις πολλά)<input type="file" id="learningUploadFiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.mp4,.webm,.mov,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,image/*,video/*"></label><div id="learningAdminOtherFilesPreview" class="learningCameraPreviews"></div>'+ 
  '<div class="learningInline"><label class="learningCameraLabel">📷 Λήψη φωτογραφίας με την κάμερα<input type="file" accept="image/*" capture="environment" id="learningAdminCamera" class="learningCameraInput"></label><label class="learningCameraLabel">🖼 Πολλές φωτογραφίες<input type="file" accept="image/*,.heic,.heif" multiple id="learningAdminGallery" class="learningCameraInput"></label></div>'+
  '<p class="learningHint" id="learningAdminCameraStatus">Πρόσθεσε πολλές φωτογραφίες, περικόψε τες και διάλεξε τη σειρά πριν δημιουργήσεις το μάθημα.</p>'+
  '<div class="mlScanPdfOptions"><label><input type="checkbox" id="learningAdminScanPdf" checked style="width:auto"> Ένωσε τις φωτογραφίες σε ένα PDF</label><button type="button" class="alt" id="learningAdminPdfPreview">👁 Προεπισκόπηση PDF</button></div>'+
@@ -751,9 +751,30 @@ async function learningAdminView(){
  const form=$("learningCreateForm"),status=$("learningCreateStatus"),picker=$("learningStudentPicker"),audience=$("learningAudience");
 
  const cameraInput=$("learningAdminCamera"),cameraGallery=$("learningAdminGallery");
+ const regularInput=$("learningUploadFiles"),otherFilesPanel=$("learningAdminOtherFilesPreview");
  const cameraStatus=$("learningAdminCameraStatus"),cameraPreview=$("learningAdminCameraPreviews");
  const scanAsPdf=$("learningAdminScanPdf"),pdfPreview=$("learningAdminPdfPreview");
- let cameraPhotos=[],cameraVersion=0,preparedPdf=null,cameraBusy=false;
+ let cameraPhotos=[],otherAdminFiles=[],cameraVersion=0,preparedPdf=null,cameraBusy=false;
+ function refreshOtherFiles(){
+   otherFilesPanel.replaceChildren();
+   for(const [index,file] of otherAdminFiles.entries()){
+     const box=document.createElement("span");box.className="learningCameraChip";
+     box.append(learningTextElement("span","📎 "+file.name));
+     const remove=document.createElement("button");remove.type="button";remove.className="alt";
+     remove.textContent="Αφαίρεση";remove.disabled=cameraBusy;
+     remove.onclick=()=>{otherAdminFiles.splice(index,1);refreshOtherFiles()};
+     box.append(remove);otherFilesPanel.append(box);
+   }
+ }
+ regularInput.onchange=()=>{
+   if(cameraBusy)return;
+   const selected=Array.from(regularInput.files||[]);
+   const images=selected.filter(mlScanIsImage);
+   if(images.length)addCameraPhotos(images);
+   otherAdminFiles.push(...selected.filter(file=>!mlScanIsImage(file)));
+   regularInput.value="";refreshOtherFiles();
+   if(!images.length&&selected.length)cameraStatus.textContent="Προστέθηκαν "+selected.length+" έγγραφα. Δεν έχουν δημοσιευτεί.";
+ };
  function invalidate(){cameraVersion++;preparedPdf=null}
  function addCameraPhotos(files){
    if(cameraBusy)return;
@@ -799,6 +820,8 @@ async function learningAdminView(){
  function refreshCameraPreview(){
    cameraPreview.replaceChildren();
    pdfPreview.disabled=cameraBusy||!cameraPhotos.length;
+   cameraInput.disabled=cameraBusy;cameraGallery.disabled=cameraBusy;regularInput.disabled=cameraBusy;
+   refreshOtherFiles();
    for(const [index,item] of cameraPhotos.entries()){
      const box=document.createElement("section");box.className="learningQueuedPhoto mlScanQueueItem";
      box.append(learningTextElement("strong","Σελίδα "+(index+1)));
@@ -857,7 +880,7 @@ async function learningAdminView(){
    const selected=Array.from(picker.querySelectorAll("input:checked")).map(n=>n.value);
    const all=audience.value==="all";
    const exercises=String(data.get("exercises")||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-   const files=Array.from($("learningUploadFiles").files||[]);
+   const files=otherAdminFiles.slice();
    if(title.length<2||title.length>180||!title){status.textContent="Συμπλήρωσε τίτλο.";return}
    if(!files.length&&!cameraPhotos.length&&!exercises.length&&!description){status.textContent="Πρόσθεσε τουλάχιστον θεωρία, αρχείο ή άσκηση.";return}
    if(!all&&!selected.length){status.textContent="Επίλεξε μαθητές ή «Όλοι οι ενεργοί μαθητές».";return}
@@ -916,7 +939,7 @@ async function learningAdminView(){
        .update({published:data.has("published")}).eq("id",unitId).select("id").single();
      if(publish.error)throw publish.error;
      finished=true;
-     form.reset();cameraPhotos=[];invalidate();refreshCameraPreview();
+     form.reset();cameraPhotos=[];otherAdminFiles=[];invalidate();refreshCameraPreview();
      cameraStatus.textContent="Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.";
      picker.classList.remove("hide");
      for(const cb of picker.querySelectorAll('input[type="checkbox"]'))cb.checked=false;
