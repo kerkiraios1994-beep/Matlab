@@ -447,7 +447,7 @@ function mlTeacherDisplay(){
   return mlLegacyTeacherName||"ο καθηγητής σου";
 }
 function mlTeacherPhrase(text,asHtml=false){
- const name=asHtml?escapeHtml(mlTeacherDisplay()):mlTeacherDisplay();
+ const name=asHtml?String(mlTeacherDisplay()).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])):mlTeacherDisplay();
  return String(text||"")
   .replace(/της κυρίας Φωτεινής/g,"του/της εκπαιδευτικού "+name)
   .replace(/την κυρία Φωτεινή/g,"τον/την εκπαιδευτικό "+name)
@@ -683,7 +683,7 @@ function renderChatBubbles(container,messages,viewerRole){
    bubble.className="chatBubble "+(m.sender_role===viewerRole?"self":"other");
    const body=document.createElement("div");body.textContent=m.body;
    const stamp=document.createElement("span");stamp.className="chatStamp";
-   stamp.textContent=(m.sender_role==="student"?"Μαθητής":"Διαχειριστής")+" · "+fmtMessageDate(m.created_at);
+   stamp.textContent=(m.sender_role==="student"?"Μαθητής":mlTeacherDisplay())+" · "+fmtMessageDate(m.created_at);
    bubble.append(body,stamp);container.append(bubble);
  }
  container.scrollTop=container.scrollHeight;
@@ -1101,7 +1101,7 @@ async function learningTeacherExerciseReview(root,answer,question,studentName,ex
    img.alt="Η χειρόγραφη λύση του μαθητή";section.append(img);
  }
  const feedbackBlock=document.createElement("div");feedbackBlock.className="learningCard";
- feedbackBlock.append(learningTextElement("h4","Διόρθωση από την κυρία Φωτεινή"));
+ feedbackBlock.append(learningTextElement("h4",mlTeacherPhrase("Διόρθωση από την κυρία Φωτεινή")));
  feedbackBlock.append(learningTextElement("p","Μολύβι, γόμα και καθαρισμός στο δικό σου επίπεδο διορθώσεων. Η λύση του μαθητή δεν αλλάζει.","learningHint"));
  const canvas=document.createElement("canvas");canvas.className="learningDraw";canvas.width=800;canvas.height=380;
  const toolrow=document.createElement("div");toolrow.className="learningInline";
@@ -1131,7 +1131,7 @@ async function learningTeacherExerciseReview(root,answer,question,studentName,ex
    else if(key==="clear"&&window.confirm("Να καθαριστούν οι διορθώσεις της καθηγήτριας;"))ctx.clearRect(0,0,800,380);
  };
  const feedback=document.createElement("textarea");feedback.className="chatTextarea";feedback.maxLength=5000;
- feedback.placeholder="Σχόλιο της κυρίας Φωτεινής προς τον μαθητή...";
+ feedback.placeholder=mlTeacherPhrase("Σχόλιο της κυρίας Φωτεινής προς τον μαθητή...");
  feedback.value=existingReview?.feedback||"";
  const scoreRow=document.createElement("div");scoreRow.className="learningInline";
  const scoreLabel=document.createElement("label");scoreLabel.textContent="Βαθμός";
@@ -1216,7 +1216,7 @@ async function learningTeacherFileReview(root,annotation,file,studentName,existi
  maxLabel.append(max);row.append(gradeLabel,maxLabel);
  const save=document.createElement("button");save.type="button";save.textContent="Αποθήκευση διορθώσεων και βαθμού";
  const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
- section.append(learningTextElement("label","Σχόλιο της κυρίας Φωτεινής"),teacherNote,row,save,state);
+ section.append(learningTextElement("label",mlTeacherPhrase("Σχόλιο της κυρίας Φωτεινής")),teacherNote,row,save,state);
  save.onclick=async()=>{
    const raw=grade.value.trim(),maxRaw=max.value.trim();
    const n=Number(raw),limit=Number(maxRaw);
@@ -1470,7 +1470,7 @@ function studentMonthCalendar(lessons) {
 
 async function studentMessagesView(user){
  if(profile?.role!=="student")return;
- $("view").innerHTML='<div class="card"><h2>Τα μηνύματά μου</h2><p class="muted">Στείλτε μήνυμα στην κυρία Φωτεινή. Μόνο εσύ και η κυρία Φωτεινή μπορείτε να διαβάσετε αυτή τη συνομιλία.</p><button type="button" class="alt" id="studentMessagesReload">Ανανέωση μηνυμάτων</button><p id="studentMessageStatus" role="status"></p><div id="studentMessageHistory" class="chatHistory"></div><form id="studentMessageForm"><label for="studentMessageBody">Μήνυμα προς την κυρία Φωτεινή</label><textarea id="studentMessageBody" class="chatTextarea" name="body" maxlength="2000" required placeholder="Γράψε το μήνυμά σου προς την κυρία Φωτεινή..."></textarea><button type="submit">Αποστολή μηνύματος</button></form></div>';
+ $("view").innerHTML=mlTeacherPhrase('<div class="card"><h2>Τα μηνύματά μου</h2><p class="muted">Στείλτε μήνυμα στην κυρία Φωτεινή. Μόνο εσύ και η κυρία Φωτεινή μπορείτε να διαβάσετε αυτή τη συνομιλία.</p><button type="button" class="alt" id="studentMessagesReload">Ανανέωση μηνυμάτων</button><p id="studentMessageStatus" role="status"></p><div id="studentMessageHistory" class="chatHistory"></div><form id="studentMessageForm"><label for="studentMessageBody">Μήνυμα προς την κυρία Φωτεινή</label><textarea id="studentMessageBody" class="chatTextarea" name="body" maxlength="2000" required placeholder="Γράψε το μήνυμά σου προς την κυρία Φωτεινή..."></textarea><button type="submit">Αποστολή μηνύματος</button></form></div>',true);
  const status=$("studentMessageStatus");
  try{
    const s=await supabase.from("students").select("id").eq("user_id",user.id).maybeSingle();
@@ -1511,7 +1511,7 @@ async function studentMessagesView(user){
          .select("id").single();
        if(added.error)throw added.error;
        form.reset();
-       status.textContent="Το μήνυμα στάλθηκε στην κυρία Φωτεινή.";
+       status.textContent=mlTeacherPhrase("Το μήνυμα στάλθηκε στην κυρία Φωτεινή.");
        await load();
      }catch(error){status.textContent="Δεν επιβεβαιώθηκε η αποστολή: "+(error?.message||String(error))}
      finally{if(button.isConnected)button.disabled=false}
@@ -2209,7 +2209,7 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
  controls.append(convertLabel,previewPdf);
  const queueDetails=document.createElement("div");queueDetails.className="learningQueuedPhotos mlScanQueue";
  const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=3000;
- comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή...";
+ comment.placeholder=mlTeacherPhrase("Προαιρετικό σχόλιο στην κυρία Φωτεινή...");
  const submit=document.createElement("button");submit.type="button";submit.textContent="📤 Αποστολή εργασίας";
  const status=learningTextElement("p","","learningHint");status.setAttribute("role","status");
  status.setAttribute("aria-live","polite");
@@ -2583,10 +2583,10 @@ async function studentLearningFileWorkspace(studentId,file,listRoot){
  const textArea=document.createElement("textarea");
  textArea.className="chatTextarea";textArea.maxLength=10000;textArea.placeholder="Πρόσθετες σημειώσεις (προαιρετικά)...";
  const comment=document.createElement("textarea");
- comment.className="chatTextarea";comment.maxLength=5000;comment.placeholder="Άφησε σχόλιο στην κυρία Φωτεινή...";
+ comment.className="chatTextarea";comment.maxLength=5000;comment.placeholder=mlTeacherPhrase("Άφησε σχόλιο στην κυρία Φωτεινή...");
  const padHolder=document.createElement("div");
  const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
- const complete=document.createElement("button");complete.type="button";complete.textContent="Υποβολή στην κυρία Φωτεινή";
+ const complete=document.createElement("button");complete.type="button";complete.textContent=mlTeacherPhrase("Υποβολή στην κυρία Φωτεινή");
  workspace.append(heading,info,status,preview);
  if(!pdf){
    workspace.append(learningTextElement("h4","Προσωπικές χειρόγραφες σημειώσεις"),padHolder);
@@ -2605,13 +2605,13 @@ async function studentLearningFileWorkspace(studentId,file,listRoot){
    textArea.value=a.data?.note||"";comment.value=a.data?.comment||"";
    let rev=0,timer=null,saving=false,submitted=Boolean(a.data?.submitted);
    let pad={getStrokes:()=>Array.isArray(a.data?.strokes)?a.data.strokes.slice():[]};
-   const updateSubmitLabel=()=>complete.textContent=submitted?"Υποβλήθηκε ✓ (πάτησε για νέα υποβολή)":"Υποβολή στην κυρία Φωτεινή";
+   const updateSubmitLabel=()=>complete.textContent=submitted?"Υποβλήθηκε ✓ (πάτησε για νέα υποβολή)":mlTeacherPhrase("Υποβολή στην κυρία Φωτεινή");
    updateSubmitLabel();
    if(!pdf)pad=learningCreatePad(padHolder,a.data?.strokes||[],()=>schedule());
    if(feedback.data && (feedback.data.feedback||feedback.data.score!==null && feedback.data.score!==undefined||
      (!pdf&&feedback.data.correction_strokes?.length))){
      const box=document.createElement("div");box.className="learningCard";
-     box.append(learningTextElement("h4","Διορθώσεις από την κυρία Φωτεινή"));
+     box.append(learningTextElement("h4",mlTeacherPhrase("Διορθώσεις από την κυρία Φωτεινή")));
      if(feedback.data.score!==null&&feedback.data.score!==undefined)
        box.append(learningTextElement("strong","Βαθμός: "+feedback.data.score+" / "+feedback.data.max_score));
      if(feedback.data.feedback)box.append(learningTextElement("p",feedback.data.feedback));
@@ -2718,7 +2718,7 @@ async function studentGradesView(user){
    const titleMap=new Map((units.data||[]).map(x=>[x.id,x.title]));
    if(!list.isConnected)return;
    list.replaceChildren();
-   status.textContent="Οι βαθμοί καταχωρίζονται αυτόματα μόλις η κυρία Φωτεινή διορθώσει τις ασκήσεις σου.";
+   status.textContent=mlTeacherPhrase("Οι βαθμοί καταχωρίζονται αυτόματα μόλις η κυρία Φωτεινή διορθώσει τις ασκήσεις σου.");
    const lessonTitle=learningTextElement("h3","Βαθμοί ασκήσεων");list.append(lessonTitle);
    if(!reviews.length)list.append(learningTextElement("p","Δεν έχει βαθμολογηθεί ακόμη κάποια άσκηση.","muted"));
    for(const review of reviews){
@@ -2833,7 +2833,7 @@ async function learningTeacherStudentUploadReview(root,upload,studentName,existi
  scores.append(label,maxLabel);
  const save=document.createElement("button");save.type="button";save.textContent="Αποθήκευση σχολίου και βαθμού";
  const state=learningTextElement("p","","learningHint");state.setAttribute("role","status");
- section.append(learningTextElement("h4","Διόρθωση κυρίας Φωτεινής"),feedback,scores,save,state);
+ section.append(learningTextElement("h4",mlTeacherPhrase("Διόρθωση κυρίας Φωτεινής")),feedback,scores,save,state);
  save.onclick=async()=>{
    const val=score.value.trim(),maxVal=max.value.trim();
    const n=Number(val),limit=Number(maxVal);
