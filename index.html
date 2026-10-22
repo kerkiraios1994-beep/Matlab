@@ -1963,9 +1963,14 @@ async function mlScanCropEditor(item,onSave){
    function draw(){
      const {w,h}=mlScanRotatedSize(image,angle);
      const scale=Math.min(1,1150/w,1300/h);
-     canvas.width=Math.max(2,Math.round(w*scale));
-     canvas.height=Math.max(2,Math.round(h*scale));
+     const targetW=Math.max(2,Math.round(w*scale));
+     const targetH=Math.max(2,Math.round(h*scale));
+     // Avoid resizing canvas on every pointer movement (breaks smooth dragging).
+     if(canvas.width!==targetW)canvas.width=targetW;
+     if(canvas.height!==targetH)canvas.height=targetH;
      const ctx=canvas.getContext("2d");
+     ctx.clearRect(0,0,canvas.width,canvas.height);
+     ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
      ctx.save();ctx.scale(canvas.width/w,canvas.height/h);mlScanDrawImage(ctx,image,angle,w,h);ctx.restore();
      const r={x:crop.x*canvas.width,y:crop.y*canvas.height,w:crop.w*canvas.width,h:crop.h*canvas.height};
      ctx.fillStyle="#16182491";
