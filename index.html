@@ -738,7 +738,10 @@ async function learningAdminView(){
  '<label>Τίτλος μαθήματος<input name="title" required maxlength="180" minlength="2" placeholder="π.χ. Εξισώσεις Α΄ Γυμνασίου"></label>'+
  '<label>Θεωρία / οδηγίες<textarea name="description" class="chatTextarea" maxlength="5000" placeholder="Σημειώσεις για το μάθημα..."></textarea></label>'+
  '<label>Αρχεία (μπορείς να επιλέξεις πολλά)<input type="file" id="learningUploadFiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,image/*,video/*"></label>'+ 
- '<div class="learningInline"><label class="learningCameraLabel">📷 Λήψη φωτογραφίας με την κάμερα<input type="file" accept="image/*" capture="environment" id="learningAdminCamera" class="learningCameraInput"></label><span class="learningHint" id="learningAdminCameraStatus">Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.</span></div><div id="learningAdminCameraPreviews" class="learningCameraPreviews"></div>'+
+ '<div class="learningInline"><label class="learningCameraLabel">📷 Λήψη φωτογραφίας με την κάμερα<input type="file" accept="image/*" capture="environment" id="learningAdminCamera" class="learningCameraInput"></label><label class="learningCameraLabel">🖼 Πολλές φωτογραφίες<input type="file" accept="image/*,.heic,.heif" multiple id="learningAdminGallery" class="learningCameraInput"></label></div>'+
+ '<p class="learningHint" id="learningAdminCameraStatus">Πρόσθεσε πολλές φωτογραφίες, περικόψε τες και διάλεξε τη σειρά πριν δημιουργήσεις το μάθημα.</p>'+
+ '<div class="mlScanPdfOptions"><label><input type="checkbox" id="learningAdminScanPdf" checked style="width:auto"> Ένωσε τις φωτογραφίες σε ένα PDF</label><button type="button" class="alt" id="learningAdminPdfPreview">👁 Προεπισκόπηση PDF</button></div>'+
+ '<div id="learningAdminCameraPreviews" class="learningQueuedPhotos mlScanQueue"></div>'+
  '<label>Ασκήσεις (μία ανά γραμμή)<textarea name="exercises" class="chatTextarea" rows="5" maxlength="15000" placeholder="Λύσε την εξίσωση 2x + 3 = 9&#10;Υπολόγισε το εμβαδόν..."></textarea></label>'+
  '<label>Πρόσβαση μαθητών<select id="learningAudience"><option value="selected">Επιλεγμένοι μαθητές</option><option value="all">Όλοι οι ενεργοί μαθητές</option></select></label>'+
  '<div id="learningStudentPicker" class="learningAudience"></div>'+
@@ -746,30 +749,91 @@ async function learningAdminView(){
  '<button id="learningUploadBtn" type="submit">Δημιουργία μαθήματος</button><p role="status" id="learningCreateStatus"></p></form></div>'+
  '<div class="card"><h2>Δημοσιευμένα και πρόχειρα μαθήματα</h2><button type="button" id="learningRefresh" class="alt">Ανανέωση</button><p id="learningListStatus" role="status"></p><div id="learningUnitsList"></div></div>';
  const form=$("learningCreateForm"),status=$("learningCreateStatus"),picker=$("learningStudentPicker"),audience=$("learningAudience");
- const cameraInput=$("learningAdminCamera"),cameraStatus=$("learningAdminCameraStatus"),cameraPreview=$("learningAdminCameraPreviews");
- let cameraPhotos=[];
- cameraInput.onchange=async()=>{
-   const selected=cameraInput.files?.[0];if(!selected)return;
-   cameraStatus.textContent="Προετοιμασία φωτογραφίας...";
+
+ const cameraInput=$("learningAdminCamera"),cameraGallery=$("learningAdminGallery");
+ const cameraStatus=$("learningAdminCameraStatus"),cameraPreview=$("learningAdminCameraPreviews");
+ const scanAsPdf=$("learningAdminScanPdf"),pdfPreview=$("learningAdminPdfPreview");
+ let cameraPhotos=[],cameraVersion=0,preparedPdf=null,cameraBusy=false;
+ function invalidate(){cameraVersion++;preparedPdf=null}
+ function addCameraPhotos(files){
+   if(cameraBusy)return;
+   const incoming=Array.from(files||[]).filter(file=>file&&file.size>0);
+   if(!incoming.length)return;
+   if(cameraPhotos.length+incoming.length>25){
+     cameraStatus.textContent="Μέχρι 25 φωτογραφίες στο ίδιο PDF. Χώρισέ τες σε περισσότερα μαθήματα.";
+     return;
+   }
+   for(const file of incoming){
+     if(file.size>learningMaxFileSize){
+       cameraStatus.textContent="Η φωτογραφία «"+file.name+"» ξεπερνά τα 50 MB.";
+       continue;
+     }
+     cameraPhotos.push({id:crypto.randomUUID(),file,rotation:0,crop:mlScanFullCrop(),edited:false,previewBlob:null});
+   }
+   invalidate();refreshCameraPreview();
+   cameraStatus.textContent=cameraPhotos.length+" φωτογραφίες έτοιμες για επεξεργασία. Δεν έχουν ανέβει ακόμη.";
+ }
+ cameraInput.onchange=()=>{addCameraPhotos(cameraInput.files);cameraInput.value=""};
+ cameraGallery.onchange=()=>{addCameraPhotos(cameraGallery.files);cameraGallery.value=""};
+ scanAsPdf.onchange=()=>{invalidate();refreshCameraPreview()};
+ async function adminPdf(){
+   if(!cameraPhotos.length)throw Error("Δεν έχεις επιλέξει φωτογραφίες.");
+   if(preparedPdf&&preparedPdf.version===cameraVersion)return preparedPdf.file;
+   const file=await mlScanPdf(cameraPhotos,text=>{if(cameraStatus.isConnected)cameraStatus.textContent=text});
+   preparedPdf={version:cameraVersion,file};return file;
+ }
+ pdfPreview.onclick=async()=>{
+   if(cameraBusy||!cameraPhotos.length)return;
+   cameraBusy=true;refreshCameraPreview();
    try{
-     const photo=await learningPrepareCameraPhoto(selected);
-     cameraPhotos.push(photo);
-     refreshCameraPreview();
-     cameraStatus.textContent="Η φωτογραφία προστέθηκε. Τράβηξε άλλη ή δημιούργησε το μάθημα.";
-   }catch(e){cameraStatus.textContent="Δεν προστέθηκε η φωτογραφία: "+(e?.message||String(e))}
-   finally{cameraInput.value=""}
+     const file=await adminPdf();
+     const screen=learningOpenWorkspace("Προεπισκόπηση υλικού PDF");
+     const message=learningTextElement("p","Το PDF έχει "+cameraPhotos.length+" σελίδες. Δεν δημοσιεύτηκε ακόμη. Επέστρεψε για να ολοκληρώσεις τη δημιουργία του μαθήματος.","learningHint");
+     const holder=document.createElement("div");holder.className="learningPreview";
+     screen.content.append(message,holder);
+     await learningRenderWritablePdf(holder,file,{});
+     cameraStatus.textContent="✓ Το PDF είναι έτοιμο για δημιουργία μαθήματος.";
+   }catch(error){cameraStatus.textContent="Δεν δημιουργήθηκε προεπισκόπηση PDF: "+(error?.message||String(error))}
+   finally{cameraBusy=false;refreshCameraPreview()}
  };
  function refreshCameraPreview(){
    cameraPreview.replaceChildren();
-   for(const [index,file] of cameraPhotos.entries()){
-     const box=document.createElement("span");box.className="learningCameraChip";
-     box.append(learningTextElement("span","📷 "+file.name));
-     const remove=document.createElement("button");remove.type="button";remove.className="alt";
-     remove.textContent="×";remove.setAttribute("aria-label","Αφαίρεση "+file.name);
-     remove.onclick=()=>{cameraPhotos.splice(index,1);refreshCameraPreview()};
-     box.append(remove);cameraPreview.append(box);
+   pdfPreview.disabled=cameraBusy||!cameraPhotos.length;
+   for(const [index,item] of cameraPhotos.entries()){
+     const box=document.createElement("section");box.className="learningQueuedPhoto mlScanQueueItem";
+     box.append(learningTextElement("strong","Σελίδα "+(index+1)));
+     const img=document.createElement("img");img.className="mlScanThumbnail";
+     img.alt="Φωτογραφία "+(index+1);box.append(img);
+     if(item.previewBlob){
+       const url=URL.createObjectURL(item.previewBlob);img.src=url;
+       img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);
+     }else if(!item.edited){
+       const url=URL.createObjectURL(item.file);img.src=url;
+       img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);
+     }else{
+       mlScanJpeg(item,440).then(out=>{
+         item.previewBlob=out.blob;if(!img.isConnected)return;
+         const url=URL.createObjectURL(out.blob);img.src=url;
+         img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);
+       }).catch(()=>{img.alt="Προεπισκόπηση μη διαθέσιμη"});
+     }
+     box.append(learningTextElement("span",item.file.name,"learningHint"));
+     const actions=document.createElement("div");actions.className="mlScanQueueActions";
+     const btn=(label,fn,disabled=false)=>{
+       const button=document.createElement("button");button.type="button";button.className="alt";
+       button.textContent=label;button.disabled=cameraBusy||disabled;button.onclick=fn;
+       actions.append(button);
+     };
+     btn("✂ Περικοπή",()=>mlScanCropEditor(item,()=>{
+       item.edited=true;item.previewBlob=null;invalidate();refreshCameraPreview();
+     }));
+     btn("↑",()=>{[cameraPhotos[index-1],cameraPhotos[index]]=[item,cameraPhotos[index-1]];invalidate();refreshCameraPreview()},index===0);
+     btn("↓",()=>{[cameraPhotos[index],cameraPhotos[index+1]]=[cameraPhotos[index+1],item];invalidate();refreshCameraPreview()},index===cameraPhotos.length-1);
+     btn("Αφαίρεση",()=>{cameraPhotos.splice(index,1);invalidate();refreshCameraPreview()});
+     box.append(actions);cameraPreview.append(box);
    }
  }
+ refreshCameraPreview();
  const result=await supabase.from("students").select("id,full_name,grade,active").order("full_name");
  if(result.error){picker.textContent="Δεν φορτώθηκαν μαθητές: "+result.error.message}
  else {
@@ -793,16 +857,28 @@ async function learningAdminView(){
    const selected=Array.from(picker.querySelectorAll("input:checked")).map(n=>n.value);
    const all=audience.value==="all";
    const exercises=String(data.get("exercises")||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-   const files=Array.from($("learningUploadFiles").files||[]).concat(cameraPhotos);
+   const files=Array.from($("learningUploadFiles").files||[]);
    if(title.length<2||title.length>180||!title){status.textContent="Συμπλήρωσε τίτλο.";return}
-   if(!files.length&&!exercises.length&&!description){status.textContent="Πρόσθεσε τουλάχιστον θεωρία, αρχείο ή άσκηση.";return}
+   if(!files.length&&!cameraPhotos.length&&!exercises.length&&!description){status.textContent="Πρόσθεσε τουλάχιστον θεωρία, αρχείο ή άσκηση.";return}
    if(!all&&!selected.length){status.textContent="Επίλεξε μαθητές ή «Όλοι οι ενεργοί μαθητές».";return}
    if(exercises.length>40||exercises.some(x=>x.length<2||x.length>3000)){status.textContent="Έως 40 ασκήσεις ανά μάθημα, τουλάχιστον 2 χαρακτήρες ανά άσκηση.";return}
    const invalid=files.find(file=>file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name)));
    if(invalid){status.textContent="Το αρχείο «"+invalid.name+"» δεν υποστηρίζεται ή ξεπερνά τα 50 MB.";return}
    btn.disabled=true;
    let unitId=null,uploaded=[],finished=false;
+   cameraBusy=true;refreshCameraPreview();
    try {
+     if(cameraPhotos.length&&scanAsPdf.checked){
+       files.push(await adminPdf());
+     }else if(cameraPhotos.length){
+       for(const [index,item] of cameraPhotos.entries()){
+         status.textContent="Προετοιμασία φωτογραφίας "+(index+1)+"/"+cameraPhotos.length+"...";
+         const scan=await mlScanJpeg(item,2100);
+         files.push(new File([scan.blob],"MathLab_fotografia_"+(index+1)+".jpg",{type:"image/jpeg"}));
+       }
+     }
+     const bad=files.find(file=>!file.size||file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name)));
+     if(bad)throw Error("Το αρχείο "+bad.name+" δεν υποστηρίζεται ή ξεπερνά τα 50 MB.");
      const auth=await supabase.auth.getUser();
      if(auth.error)throw auth.error;
      if(!auth.data?.user)throw Error("Η σύνδεση έληξε.");
@@ -840,7 +916,8 @@ async function learningAdminView(){
        .update({published:data.has("published")}).eq("id",unitId).select("id").single();
      if(publish.error)throw publish.error;
      finished=true;
-     form.reset();cameraPhotos=[];refreshCameraPreview();cameraStatus.textContent="Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.";
+     form.reset();cameraPhotos=[];invalidate();refreshCameraPreview();
+     cameraStatus.textContent="Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.";
      picker.classList.remove("hide");
      for(const cb of picker.querySelectorAll('input[type="checkbox"]'))cb.checked=false;
      status.textContent="Το μάθημα αποθηκεύτηκε με "+files.length+" αρχείο/αρχεία και "+exercises.length+" ασκήσεις.";
@@ -851,6 +928,7 @@ async function learningAdminView(){
        if(uploaded.length)await supabase.storage.from(learningBucket).remove(uploaded);
        await supabase.from("mathlab_learning_units").delete().eq("id",unitId);
      }
+     cameraBusy=false;refreshCameraPreview();
      if(btn.isConnected)btn.disabled=false;
    }
  };
