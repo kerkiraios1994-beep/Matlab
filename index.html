@@ -43,6 +43,13 @@ body.learningModalOpen{overflow:hidden}
 .mathlabWelcome #logout{display:block;margin:14px auto 0}
 .appToolbar{justify-content:center}
 @media(max-width:520px){.mathlabHeader{justify-content:flex-end;padding-right:19px}.mathlabHeader #menuToggle{left:8px}.mathlabWelcome{padding:17px 12px}}
+
+.learningCameraLabel{display:inline-flex;align-items:center;justify-content:center;gap:5px;position:relative;cursor:pointer;padding:12px 16px;border-radius:11px;background:var(--ml-accent-soft,#f8e9f0);color:var(--ml-text,#754c66);font-weight:700;min-height:45px}
+.learningCameraLabel:focus-within{outline:2px solid var(--ml-accent,#a36a89);outline-offset:2px}
+.learningCameraInput{position:absolute!important;width:100%!important;height:100%!important;inset:0!important;margin:0!important;opacity:0!important;cursor:pointer}
+.learningCameraPreviews{display:flex;flex-wrap:wrap;gap:7px;margin:7px 0}
+.learningCameraChip{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:5px 7px;background:#f6eaf0}
+.learningCameraChip button{padding:4px 9px;min-height:30px}
 </style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span>MathLab</span></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="invitePanel" class="card hide"><h1>Πρόσκληση μαθητή</h1><p>Δημιούργησε τον δικό σου λογαριασμό MathLab.</p><form id="inviteSignupForm"><label>Όνομα</label><input name="first_name" maxlength="60" autocomplete="given-name" required><label>Επίθετο</label><input name="last_name" maxlength="60" autocomplete="family-name" required><label>Τηλέφωνο</label><input type="tel" name="phone" maxlength="30" autocomplete="tel" required><label>Τάξη</label><input name="grade" maxlength="60" required placeholder="π.χ. Β΄ Γυμνασίου"><label>Email</label><input type="email" name="email" required autocomplete="email"><label>Προσωπικός κωδικός (τουλάχιστον 12 χαρακτήρες)</label><input type="password" name="password" minlength="12" required autocomplete="new-password"><button type="submit" id="signupStudentBtn">Δημιουργία λογαριασμού</button></form><button type="button" class="alt" id="inviteExistingLogin">Έχω ήδη λογαριασμό – Σύνδεση</button><p id="inviteStatus" role="status"></p></div><div id="recovery" class="card hide"><h1>Νέος κωδικός</h1><form id="passwordForm"><label>Ορισμός κωδικού (τουλάχιστον 12 χαρακτήρες)</label><input id="newPassword" type="password" minlength="12" required autocomplete="new-password"><button>Αποθήκευση</button></form><p id="recoveryMessage"></p></div><section id="dashboard" class="hide"><div class="card mathlabWelcome"><h1>Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab</h1><p id="profile" class="welcomeName"></p><button class="alt" id="logout">Έξοδος</button></div><div class="appToolbar"><strong id="currentSection">MathLab</strong></div><div id="menuBackdrop" class="menuBackdrop hide"></div><nav id="nav" class="sideMenu" aria-label="Ενότητες MathLab"></nav><div id="view"></div></section></main><script type="module">import{createClient}from "https://esm.sh/@supabase/supabase-js@2.76.1";const supabase=createClient("https://terlbwqcmrfsjhagtxch.supabase.co","sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0");const $=x=>document.getElementById(x),escapeHtml=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));let profile=null;let claimedInvite=false;const inviteToken=new URLSearchParams(location.search).get("invite")||"";function screen(id){for(let a of ["auth","dashboard","recovery","invitePanel"])$(a).classList.toggle("hide",a!==id);$("menuToggle")?.classList.toggle("hide",id!=="dashboard");if(id!=="dashboard")$("nav")?.classList.remove("open")}const tabs={learning:["Εκπαιδευτικό υλικό",[]],messages:["Μηνύματα",[]],invites:["Προσκλήσεις",[]],calendar:["Ημερολόγιο",[]],students:["Μαθητές",["full_name","grade"]],classes:["Τμήματα",["name","weekday","starts_at","ends_at"]],attendance:["Απουσίες",["session_date","status"]],assignments:["Εργασίες",["title","due_date"]],grades:["Βαθμολογίες",["title","score","max_score"]],invoices:["Δίδακτρα",["period","amount","paid_amount"]],announcements:["Ανακοινώσεις",["title","body"]]};let studentToken="";async function studentApi(method,params="",payload){if(!studentToken)throw new Error("Η σύνδεση χρειάζεται ανανέωση. Κάνε είσοδο ξανά.");const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);try{const res=await fetch("https://terlbwqcmrfsjhagtxch.supabase.co/rest/v1/students"+params,{method,headers:{"apikey":"sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0","Authorization":"Bearer "+studentToken,"Content-Type":"application/json","Prefer":method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation"},body:payload?JSON.stringify(payload):undefined,signal:ctl.signal});let body=await res.json().catch(()=>null);if(!res.ok)throw new Error((body?.message||body?.details||body?.hint||"HTTP "+res.status)+" (HTTP "+res.status+")");return body||[]}catch(e){if(e.name==="AbortError")throw new Error("Η επικοινωνία με τη βάση ξεπέρασε τα 10 δευτερόλεπτα.");throw e}finally{clearTimeout(timer)}}let studentRecords=[];const levels={primary:"Δημοτικό",middle:"Γυμνάσιο",high:"Λύκειο"};function studentList(q=""){const rows=studentRecords.filter(s=>[s.full_name,s.grade,levels[s.level],s.phone||""].join(" ").toLocaleLowerCase("el").includes(q.toLocaleLowerCase("el")));$("studentRows").innerHTML=rows.map(s=>'<tr><td>'+escapeHtml(s.full_name)+'</td><td>'+escapeHtml(levels[s.level])+'</td><td>'+escapeHtml(s.grade)+'</td><td>'+escapeHtml(s.phone||"—")+'</td><td>'+(s.monthly_tuition==null?"—":Number(s.monthly_tuition).toLocaleString("el-GR",{style:"currency",currency:"EUR"}))+'</td><td>'+escapeHtml(s.email||"—")+'</td><td>'+(s.user_id?"Ενεργός":"Δεν έχει ενεργοποιηθεί")+'</td><td><button class="alt" data-edit-student="'+escapeHtml(s.id)+'">Επεξεργασία</button><button type="button" class="danger" data-delete-student="'+escapeHtml(s.id)+'">Διαγραφή</button></td></tr>').join("")||'<tr><td colspan="8">Δεν βρέθηκαν μαθητές.</td></tr>'}function studentForm(s){const id=s?.id||"";return '<div class="card" id="studentEditor"><h2>'+(id?'Επεξεργασία μαθητή':'Νέος μαθητής')+'</h2><form id="studentForm"><input type="hidden" name="id" value="'+escapeHtml(id)+'"><label>Ονοματεπώνυμο</label><input name="full_name" required maxlength="150" value="'+escapeHtml(s?.full_name||"")+'"><label>Βαθμίδα</label><select name="level" required>'+Object.entries(levels).map(([v,t])=>'<option value="'+v+'" '+(s?.level===v?'selected':'')+'>'+t+'</option>').join("")+'</select><label>Τάξη</label><input name="grade" maxlength="60" required value="'+escapeHtml(s?.grade||"")+'" placeholder="π.χ. Β΄ Γυμνασίου"><label>Κινητό</label><input name="phone" type="tel" maxlength="30" value="'+escapeHtml(s?.phone||"")+'"><label>Μηνιαία δίδακτρα (€)</label><input name="monthly_tuition" type="number" min="0" step="0.01" inputmode="decimal" placeholder="π.χ. 80" value="'+escapeHtml(s?.monthly_tuition??"")+'"><label><input type="checkbox" name="active" style="width:auto" '+(s?.active!==false?'checked':'')+'> Ενεργός μαθητής</label><p><button type="button" id="saveStudentBtn">Αποθήκευση</button> <button type="button" class="alt" id="cancelStudent">Ακύρωση</button></p><p id="studentStatus" role="status"></p></form></div>'}async function studentsView(){ $("view").innerHTML='<div class="card">Φόρτωση μαθητών...</div>';let data;try{const answer=await supabase.from("students").select("id,full_name,level,grade,active,phone,monthly_tuition,email,user_id").order("full_name");if(answer.error)throw answer.error;data=answer.data||[]}catch(error){$("view").innerHTML='<div class="card">Δεν φορτώθηκαν οι μαθητές: '+escapeHtml(error.message)+'</div>';return}studentRecords=data||[];$("view").innerHTML='<div class="card"><h2>Μαθητές ('+studentRecords.length+')</h2><p id="savedStudentNames" class="muted">Αποθηκευμένοι: '+studentRecords.map(s=>escapeHtml(s.full_name)+(s.active===false?" (ανενεργός)":"")).join(", ")+'</p>'+(profile?.role==="admin"?'<button id="addStudent">+ Προσθήκη μαθητή</button>':'')+'<label for="studentSearch">Αναζήτηση μαθητή</label><input id="studentSearch" placeholder="Όνομα ή τάξη"><div class="scroll"><table><thead><tr><th>Ονοματεπώνυμο</th><th>Βαθμίδα</th><th>Τάξη</th><th>Κινητό</th><th>Δίδακτρα/μήνα</th><th>Email</th><th>Λογαριασμός</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div></div><div id="deleteStudentStatus" class="card hide" role="status"></div><div id="studentFormSlot"></div>';studentList()}$("view").addEventListener("input",e=>{if(e.target.id==="studentSearch")studentList(e.target.value)});$("view").addEventListener("click",e=>{if(e.target.id==="addStudent")$("studentFormSlot").innerHTML=studentForm(null);if(e.target.id==="cancelStudent")$("studentFormSlot").innerHTML="";if(e.target.dataset.editStudent&&profile?.role==="admin"){let s=studentRecords.find(x=>x.id===e.target.dataset.editStudent);if(s){$("studentFormSlot").innerHTML=studentForm(s);$("studentEditor").scrollIntoView({behavior:"smooth"})}}});
 
 let deletingStudent=false;
@@ -431,7 +438,8 @@ async function learningAdminView(){
  '<form id="learningCreateForm">'+
  '<label>Τίτλος μαθήματος<input name="title" required maxlength="180" minlength="2" placeholder="π.χ. Εξισώσεις Α΄ Γυμνασίου"></label>'+
  '<label>Θεωρία / οδηγίες<textarea name="description" class="chatTextarea" maxlength="5000" placeholder="Σημειώσεις για το μάθημα..."></textarea></label>'+
- '<label>Αρχεία (μπορείς να επιλέξεις πολλά)<input type="file" id="learningUploadFiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,image/*,video/*"></label>'+
+ '<label>Αρχεία (μπορείς να επιλέξεις πολλά)<input type="file" id="learningUploadFiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mov,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,image/*,video/*"></label>'+ 
+ '<div class="learningInline"><label class="learningCameraLabel">📷 Λήψη φωτογραφίας με την κάμερα<input type="file" accept="image/*" capture="environment" id="learningAdminCamera" class="learningCameraInput"></label><span class="learningHint" id="learningAdminCameraStatus">Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.</span></div><div id="learningAdminCameraPreviews" class="learningCameraPreviews"></div>'+
  '<label>Ασκήσεις (μία ανά γραμμή)<textarea name="exercises" class="chatTextarea" rows="5" maxlength="15000" placeholder="Λύσε την εξίσωση 2x + 3 = 9&#10;Υπολόγισε το εμβαδόν..."></textarea></label>'+
  '<label>Πρόσβαση μαθητών<select id="learningAudience"><option value="selected">Επιλεγμένοι μαθητές</option><option value="all">Όλοι οι ενεργοί μαθητές</option></select></label>'+
  '<div id="learningStudentPicker" class="learningAudience"></div>'+
@@ -439,6 +447,30 @@ async function learningAdminView(){
  '<button id="learningUploadBtn" type="submit">Δημιουργία μαθήματος</button><p role="status" id="learningCreateStatus"></p></form></div>'+
  '<div class="card"><h2>Δημοσιευμένα και πρόχειρα μαθήματα</h2><button type="button" id="learningRefresh" class="alt">Ανανέωση</button><p id="learningListStatus" role="status"></p><div id="learningUnitsList"></div></div>';
  const form=$("learningCreateForm"),status=$("learningCreateStatus"),picker=$("learningStudentPicker"),audience=$("learningAudience");
+ const cameraInput=$("learningAdminCamera"),cameraStatus=$("learningAdminCameraStatus"),cameraPreview=$("learningAdminCameraPreviews");
+ let cameraPhotos=[];
+ cameraInput.onchange=async()=>{
+   const selected=cameraInput.files?.[0];if(!selected)return;
+   cameraStatus.textContent="Προετοιμασία φωτογραφίας...";
+   try{
+     const photo=await learningPrepareCameraPhoto(selected);
+     cameraPhotos.push(photo);
+     refreshCameraPreview();
+     cameraStatus.textContent="Η φωτογραφία προστέθηκε. Τράβηξε άλλη ή δημιούργησε το μάθημα.";
+   }catch(e){cameraStatus.textContent="Δεν προστέθηκε η φωτογραφία: "+(e?.message||String(e))}
+   finally{cameraInput.value=""}
+ };
+ function refreshCameraPreview(){
+   cameraPreview.replaceChildren();
+   for(const [index,file] of cameraPhotos.entries()){
+     const box=document.createElement("span");box.className="learningCameraChip";
+     box.append(learningTextElement("span","📷 "+file.name));
+     const remove=document.createElement("button");remove.type="button";remove.className="alt";
+     remove.textContent="×";remove.setAttribute("aria-label","Αφαίρεση "+file.name);
+     remove.onclick=()=>{cameraPhotos.splice(index,1);refreshCameraPreview()};
+     box.append(remove);cameraPreview.append(box);
+   }
+ }
  const result=await supabase.from("students").select("id,full_name,grade,active").order("full_name");
  if(result.error){picker.textContent="Δεν φορτώθηκαν μαθητές: "+result.error.message}
  else {
@@ -462,7 +494,7 @@ async function learningAdminView(){
    const selected=Array.from(picker.querySelectorAll("input:checked")).map(n=>n.value);
    const all=audience.value==="all";
    const exercises=String(data.get("exercises")||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-   const files=Array.from($("learningUploadFiles").files||[]);
+   const files=Array.from($("learningUploadFiles").files||[]).concat(cameraPhotos);
    if(title.length<2||title.length>180||!title){status.textContent="Συμπλήρωσε τίτλο.";return}
    if(!files.length&&!exercises.length&&!description){status.textContent="Πρόσθεσε τουλάχιστον θεωρία, αρχείο ή άσκηση.";return}
    if(!all&&!selected.length){status.textContent="Επίλεξε μαθητές ή «Όλοι οι ενεργοί μαθητές».";return}
@@ -509,7 +541,7 @@ async function learningAdminView(){
        .update({published:data.has("published")}).eq("id",unitId).select("id").single();
      if(publish.error)throw publish.error;
      finished=true;
-     form.reset();
+     form.reset();cameraPhotos=[];refreshCameraPreview();cameraStatus.textContent="Μπορείς να τραβήξεις περισσότερες από μία φωτογραφίες.";
      picker.classList.remove("hide");
      for(const cb of picker.querySelectorAll('input[type="checkbox"]'))cb.checked=false;
      status.textContent="Το μάθημα αποθηκεύτηκε με "+files.length+" αρχείο/αρχεία και "+exercises.length+" ασκήσεις.";
@@ -1429,20 +1461,41 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
  section.append(learningTextElement("p","Στείλε δικό σου PDF, φωτογραφία, Word, PowerPoint ή άλλο αρχείο στην κυρία Φωτεινή για έλεγχο. Μέχρι 50 MB ανά αρχείο.","learningHint"));
  const fileInput=document.createElement("input");
  fileInput.type="file";fileInput.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov";
- fileInput.style.position="absolute";fileInput.style.width="1px";fileInput.style.height="1px";
- fileInput.style.opacity="0";fileInput.style.pointerEvents="none";
+ fileInput.className="learningCameraInput";
  fileInput.setAttribute("aria-label","Επιλογή εγγράφου από το κινητό");
  const choose=document.createElement("button");choose.type="button";choose.className="alt";
  choose.textContent="📎 Επιλογή αρχείου από το κινητό";
  choose.onclick=()=>fileInput.click();
+
+ const cameraInput=document.createElement("input");
+ cameraInput.type="file";cameraInput.accept="image/*";cameraInput.setAttribute("capture","environment");
+ cameraInput.className="learningCameraInput";cameraInput.setAttribute("aria-label","Φωτογράφιση εργασίας");
+ const cameraLabel=document.createElement("label");cameraLabel.className="learningCameraLabel";
+ cameraLabel.textContent="📷 Λήψη φωτογραφίας";
+ cameraLabel.append(cameraInput);
  const chosen=learningTextElement("p","Δεν έχει επιλεγεί αρχείο.","learningHint");
- fileInput.onchange=()=>{const file=fileInput.files?.[0];chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο."};
+ let pendingPhoto=null;
+ fileInput.onchange=()=>{
+   pendingPhoto=null;
+   const file=pendingPhoto||fileInput.files?.[0];
+   chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο.";
+ };
+ cameraInput.onchange=async()=>{
+   const file=cameraInput.files?.[0];if(!file)return;
+   chosen.textContent="Προετοιμασία φωτογραφίας...";
+   try{
+     pendingPhoto=await learningPrepareCameraPhoto(file);
+     fileInput.value="";
+     chosen.textContent="📷 "+pendingPhoto.name+" — "+learningFriendlyBytes(pendingPhoto.size);
+   }catch(error){pendingPhoto=null;chosen.textContent="Δεν διαβάστηκε η φωτογραφία: "+(error?.message||String(error))}
+   finally{cameraInput.value=""}
+ };
  const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=3000;
  comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή…";
  const submit=document.createElement("button");submit.type="button";submit.textContent="Αποστολή εγγράφου";
  const status=learningTextElement("p","","learningHint");status.setAttribute("role","status");
  const list=document.createElement("div");
- section.append(fileInput,choose,chosen,learningTextElement("label","Μήνυμα για το έγγραφο"),comment,submit,status,
+ section.append(fileInput,choose,cameraLabel,chosen,learningTextElement("label","Μήνυμα για το έγγραφο"),comment,submit,status,
    learningTextElement("h4","Τα αρχεία που έχω στείλει"),list);
  mount.append(section);
  async function listMyUploads(){
@@ -1474,7 +1527,7 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
    if(file.size>learningMaxFileSize||file.size===0||!learningAllowedExts.has(learningExt(file.name))){
      status.textContent="Επίλεξε υποστηριζόμενο αρχείο έως 50 MB.";return;
    }
-   submit.disabled=true;choose.disabled=true;
+   submit.disabled=true;choose.disabled=true;cameraInput.disabled=true;
    let uploadedPath=null,metadataSaved=false;
    try{
      status.textContent="Ανεβαίνει το αρχείο: "+file.name;
@@ -1489,7 +1542,7 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
        mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:comment.value.trim()
      }).select("id").single();
      if(saved.error)throw saved.error;
-     metadataSaved=true;fileInput.value="";comment.value="";chosen.textContent="Δεν έχει επιλεγεί αρχείο.";
+     metadataSaved=true;fileInput.value="";cameraInput.value="";pendingPhoto=null;comment.value="";chosen.textContent="Δεν έχει επιλεγεί αρχείο.";
      status.textContent="✓ Το έγγραφο στάλθηκε και εμφανίζεται στις «Εργασίες» της κυρίας Φωτεινής.";
      await listMyUploads();
    }catch(error){status.textContent="Το έγγραφο δεν στάλθηκε: "+(error?.message||String(error))}
@@ -1497,7 +1550,7 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
      if(uploadedPath&&!metadataSaved){
        await supabase.storage.from(learningBucket).remove([uploadedPath]);
      }
-     if(submit.isConnected){submit.disabled=false;choose.disabled=false}
+     if(submit.isConnected){submit.disabled=false;choose.disabled=false;cameraInput.disabled=false}
    }
  };
  try{await listMyUploads()}catch(error){status.textContent="Δεν φορτώθηκαν τα απεσταλμένα αρχεία: "+(error?.message||String(error))}
