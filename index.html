@@ -3571,6 +3571,111 @@ async function mlTenantStudentLessonsView(){
    }
  }catch(error){status.textContent="Δεν φορτώθηκαν οι εργασίες: "+(error?.message||String(error))}
 }
+
+async function mlTenantMessagesView(){
+ const root=$("view");root.replaceChildren();
+ const shell=document.createElement("section");shell.className="card";
+ shell.append(learningTextElement("h2","💬 Μηνύματα"));
+ const desc=mlTenantRole==="student"?
+  "Προσωπική συνομιλία με "+mlTenantTeacherName+". Τα μηνύματα είναι ιδιωτικά.":
+  "Προσωπικές συνομιλίες με τους μαθητές του "+mlTenantSchoolName+".";
+ shell.append(learningTextElement("p",desc,"learningHint"));
+ const status=learningTextElement("p","","learningHint"),threads=document.createElement("div"),
+   conversation=document.createElement("div");
+ shell.append(status,threads,conversation);root.append(shell);
+ const auth=await supabase.auth.getUser();if(auth.error)throw auth.error;
+ if(!auth.data?.user){status.textContent="Η σύνδεση έληξε.";return}
+ const user=auth.data.user;
+ let studentRows=[];
+ try{
+   const result=await supabase.from("mathlab_school_students")
+    .select("id,full_name,user_id").eq("school_id",mlTenantSchoolId).eq("active",true)
+    .order("full_name");
+   if(result.error)throw result.error;
+   studentRows=mlTenantRole==="student"?(result.data||[]).filter(x=>x.user_id===user.id):result.data||[];
+ }catch(e){status.textContent="Δεν φορτώθηκαν οι συνομιλίες: "+(e?.message||String(e));return}
+ if(!studentRows.length){
+   status.textContent=mlTenantRole==="student"?
+     "Δεν βρέθηκε ενεργή εγγραφή μαθητή. Μίλησε με τον καθηγητή σου.":
+     "Πρόσθεσε πρώτα έναν μαθητή και στείλε πρόσκληση για να ξεκινήσετε τη συνομιλία.";
+   return;
+ }
+ status.textContent="Επίλεξε μαθητή για συνομιλία.";
+ async function openThread(student){
+   conversation.replaceChildren();
+   const heading=learningTextElement("h3",mlTenantRole==="student"?
+      "Συνομιλία με "+mlTenantTeacherName:student.full_name);
+   const history=document.createElement("div");history.className="chatHistory";
+   const state=learningTextElement("p","","learningHint");
+   const form=document.createElement("form");
+   const label=learningTextElement("label","Μήνυμα προς "+(mlTenantRole==="student"?mlTenantTeacherName:student.full_name));
+   const body=document.createElement("textarea");body.className="chatTextarea";
+   body.required=true;body.maxLength=2000;body.rows=3;
+   body.placeholder="Γράψε το μήνυμά σου...";
+   const send=document.createElement("button");send.type="submit";send.textContent="Αποστολή μηνύματος";
+   form.append(label,body,send);conversation.append(heading,history,form,state);
+   async function refresh(){
+     const res=await supabase.from("mathlab_school_messages")
+       .select("id,sender_id,sender_role,body,created_at,read_at")
+       .eq("school_id",mlTenantSchoolId).eq("student_id",student.id)
+       .order("created_at",{ascending:true}).limit(200);
+     if(res.error)throw res.error;
+     if(!history.isConnected)return;
+     history.replaceChildren();
+     const entries=res.data||[];
+     if(!entries.length)history.append(learningTextElement("p","Δεν υπάρχουν μηνύματα ακόμη.","learningHint"));
+     const unread=[];
+     for(const m of entries){
+       const own=m.sender_id===user.id;
+       const box=document.createElement("div");box.className="chatBubble "+(own?"self":"other");
+       const sender=own?"Εσύ":m.sender_role==="teacher"?mlTenantTeacherName:student.full_name;
+       const p=learningTextElement("strong",sender+" · "+new Date(m.created_at).toLocaleString("el-GR"));
+       const content=document.createElement("p");content.textContent=m.body;
+       content.style.whiteSpace="pre-wrap";box.append(p,content);history.append(box);
+       if(!own&&!m.read_at)unread.push(m.id);
+     }
+     history.scrollTop=history.scrollHeight;
+     if(unread.length){
+       await supabase.from("mathlab_school_messages").update({read_at:new Date().toISOString()})
+        .eq("school_id",mlTenantSchoolId).eq("student_id",student.id)
+        .in("id",unread);
+     }
+   }
+   form.onsubmit=async event=>{
+     event.preventDefault();if(!body.value.trim())return;
+     send.disabled=true;state.textContent="Αποστολή μηνύματος...";
+     try{
+       const res=await supabase.from("mathlab_school_messages").insert({
+         school_id:mlTenantSchoolId,student_id:student.id,
+         sender_id:user.id,sender_role:mlTenantRole==="student"?"student":"teacher",
+         body:body.value.trim()
+       }).select("id").single();
+       if(res.error)throw res.error;
+       body.value="";state.textContent="✓ Το μήνυμα στάλθηκε.";
+       await refresh();
+     }catch(e){state.textContent="Το μήνυμα δεν στάλθηκε: "+(e?.message||String(e))}
+     finally{send.disabled=false}
+   };
+   state.textContent="Φόρτωση μηνυμάτων...";
+   try{await refresh();state.textContent=""}
+   catch(e){state.textContent="Δεν φορτώθηκαν τα μηνύματα: "+(e?.message||String(e))}
+   const reload=document.createElement("button");reload.type="button";reload.className="alt";
+   reload.textContent="Ανανέωση συνομιλίας";
+   reload.onclick=()=>refresh().catch(e=>state.textContent=e.message);
+   conversation.append(reload);
+ }
+ if(mlTenantRole!=="student"){
+   const heading=learningTextElement("h3","Οι μαθητές μου");threads.append(heading);
+   for(const student of studentRows){
+     const button=document.createElement("button");button.type="button";button.className="alt";
+     button.textContent="💬 "+student.full_name+(student.user_id?"":" · χωρίς λογαριασμό");
+     button.disabled=!student.user_id;
+     button.onclick=()=>openThread(student);
+     threads.append(button);
+   }
+ }else await openThread(studentRows[0]);
+}
+
 async function mlTenantRouter(tab){
  if(!mlTenantSchoolId){$("view").textContent="Δεν βρέθηκε σχολή για αυτόν τον λογαριασμό.";return}
  const routes={
@@ -3578,11 +3683,12 @@ async function mlTenantRouter(tab){
   tenantStudents:mlTenantStudentsView,
   tenantLessons:mlTenantLessonsView,
   tenantAssignments:mlTenantAssignmentsView,
+  tenantMessages:mlTenantMessagesView,
   tenantStudentLessons:mlTenantStudentLessonsView,
   settings:mlSettingsView
  };
  const fn=routes[tab]||mlTenantHomeView;
- if(mlTenantRole==="student"&&!["tenantStudentLessons","settings"].includes(tab))return;
+ if(mlTenantRole==="student"&&!["tenantStudentLessons","tenantMessages","settings"].includes(tab))return;
  if(mlTenantRole!=="student"&&tab==="tenantStudentLessons")return;
  await fn();mlApplyLanguage();
 }
