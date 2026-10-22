@@ -2582,6 +2582,8 @@ function mlStartNotifications(userId){
  if(!userId)return;
  mlStopNotifications();
  mlNotificationUserId=userId;
+ const bell=$("mlNotificationBell");
+ if(bell)bell.onclick=()=>{if(!mlNotificationUserId)return;setMenuOpen(false);setCurrentSection("notifications");mlNotificationsView()};
  mlUpdateNotificationBadge();
  mlRefreshNotifications();
  mlNotificationTimer=setInterval(()=>{if(!document.hidden)mlRefreshNotifications()},30000);
