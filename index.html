@@ -196,11 +196,11 @@ const mlMenuEnglish={
  calendar:"Calendar",students:"Students",classes:"Classes",attendance:"Attendance",
  assignments:"Assignments",grades:"Grades",invoices:"Tuition",announcements:"Announcements",
  studentCalendar:"Calendar",studentMessages:"Messages",studentGrades:"My grades",studentLessons:"My lessons",
- notifications:"Notifications",settings:"Settings",tenantHome:"Home",tenantStudents:"My students",tenantLessons:"Lessons",tenantAssignments:"Assignments",tenantMessages:"Messages",tenantStudentLessons:"My assignments"
+ notifications:"Notifications",settings:"Settings",creatorReports:"Creator reports",tenantHome:"Home",tenantStudents:"My students",tenantLessons:"Lessons",tenantAssignments:"Assignments",tenantMessages:"Messages",tenantStudentLessons:"My assignments"
 };
 const mlCommonEnglish={
  "Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab":"Welcome to the modern MathLab learning center",
- "Ειδοποιήσεις":"Notifications","Δεν υπάρχουν ειδοποιήσεις.":"No notifications yet.","Αδιάβαστη":"Unread","Διαβάστηκε":"Read","Σήμανση όλων ως διαβασμένων":"Mark all as read","Ρυθμίσεις":"Settings","Χρώμα εφαρμογής":"App color",
+ "Αναφορά προβλήματος":"Report a problem","Αναφορές χρηστών":"User reports","Ειδοποιήσεις":"Notifications","Δεν υπάρχουν ειδοποιήσεις.":"No notifications yet.","Αδιάβαστη":"Unread","Διαβάστηκε":"Read","Σήμανση όλων ως διαβασμένων":"Mark all as read","Ρυθμίσεις":"Settings","Χρώμα εφαρμογής":"App color",
  "Χρώμα φόντου":"Page background","Γραμματοσειρά":"Font",
  "Μέγεθος γραμμάτων":"Text size","Γλώσσα εφαρμογής":"App language",
  "Αλλαγή κωδικού":"Change password","Νέος κωδικός":"New password",
@@ -253,7 +253,7 @@ function mlUpdateMenuLanguage(){
  for(const button of document.querySelectorAll("#nav [data-tab]")){
    const id=button.dataset.tab;
    const tenantGreek={tenantHome:"Αρχική",tenantStudents:"Οι μαθητές μου",tenantLessons:"Μαθήματα",tenantAssignments:"Εργασίες",tenantMessages:"Μηνύματα",tenantStudentLessons:"Οι εργασίες μου"};
-   const greek=id in tenantGreek?tenantGreek[id]:id==="settings"?"Ρυθμίσεις":id==="notifications"?"Ειδοποιήσεις":id.startsWith("student")?
+   const greek=id in tenantGreek?tenantGreek[id]:id==="creatorReports"?"Αναφορές χρηστών":id==="settings"?"Ρυθμίσεις":id==="notifications"?"Ειδοποιήσεις":id.startsWith("student")?
      ({studentCalendar:"Ημερολόγιο",studentMessages:"Μηνύματα",studentGrades:"Οι βαθμοί μου",studentLessons:"Τα μαθήματά μου"}[id]||id)
      :(tabs[id]?.[0]||id);
    const badge=button.textContent.match(/ \(\d+ (?:νέα|new)\)$/)?.[0]||"";
@@ -303,7 +303,12 @@ async function mlSettingsView(){
   '<input id="mlPassword2" type="password" minlength="12" autocomplete="new-password" required>'+
   '<p class="muted">Τουλάχιστον 12 χαρακτήρες. Ο κωδικός δεν αποθηκεύεται μαζί με τις ρυθμίσεις εμφάνισης.</p>'+
   '<button type="submit" id="mlSavePassword">Ενημέρωση κωδικού</button>'+
-  '<p id="mlPasswordStatus" role="status"></p></form></div>';
+  '<p id="mlPasswordStatus" role="status"></p></form></div>'+
+  '<div class="card"><h2>🛟 Αναφορά προβλήματος</h2>'+
+  '<p class="learningHint">Αν εντοπίσεις κάποιο πρόβλημα, στείλε αναφορά στον δημιουργό του MathLab. Η αναφορά θα καταγραφεί με ασφάλεια και μπορείς να παρακολουθήσεις την κατάστασή της.</p>'+
+  '<button type="button" id="mlOpenIssueReport">📝 Αναφορά προβλήματος</button>'+
+  '<div id="mlIssueReportArea"></div></div>';
+ $("mlOpenIssueReport").onclick=()=>mlSupportReportForm($("mlIssueReportArea"));
  const accent=$("mlAccent"),background=$("mlPageBackground"),font=$("mlFont"),size=$("mlFontSize"),language=$("mlLanguage");
  function addOptions(el,options){
    for(const [id,label] of options){
@@ -3095,7 +3100,9 @@ async function mlMarkNotificationRead(record){
 async function mlOpenNotificationTarget(record){
  await mlMarkNotificationRead(record);
  const target=record.target;
- if(mlTenantSchoolId){
+ if(target==="creatorReports"&&mlIsCreator){
+   setCurrentSection("creatorReports");await mlCreatorReportsView();
+ }else if(mlTenantSchoolId){
    const id=mlTenantRole==="student"?"tenantStudentLessons":target==="assignments"?"tenantAssignments":"tenantLessons";
    setCurrentSection(id);await mlTenantRouter(id);
  }else if(profile?.role==="admin"){
@@ -3142,7 +3149,7 @@ async function mlNotificationsView(){
      const desc=document.createElement("p");desc.textContent=note.body;
      const date=learningTextElement("p",(note.read_at?"Διαβάστηκε":"Αδιάβαστη")+" · "+new Date(note.created_at).toLocaleString("el-GR"),"learningHint");
      const action=document.createElement("button");action.type="button";action.className="alt";
-     action.textContent=note.target==="assignments"?"Άνοιγμα εργασιών":note.target==="studentGrades"?"Άνοιγμα βαθμών":"Άνοιγμα μαθημάτων";
+     action.textContent=note.target==="creatorReports"?"Προβολή αναφοράς":note.target==="assignments"?"Άνοιγμα εργασιών":note.target==="studentGrades"?"Άνοιγμα βαθμών":"Άνοιγμα μαθημάτων";
      action.onclick=async()=>{
        action.disabled=true;
        try{await mlOpenNotificationTarget(note)}
@@ -3196,6 +3203,154 @@ async function mlTenantLookup(user){
  mlTenantTeacherName=String(owner.data||"").trim()||"ο καθηγητής σου";
  return Boolean(mlTenantSchoolId);
 }
+
+/** Creator-only support inbox and privacy-preserving reports. */
+let mlIsCreator=false;
+async function mlRefreshCreatorStatus(){
+  const current=await supabase.auth.getUser();
+  if(current.error||!current.data?.user){mlIsCreator=false;return}
+  const result=await supabase.rpc("mathlab_am_i_creator");
+  if(result.error){console.warn("Creator check:",result.error.message);mlIsCreator=false;return}
+  mlIsCreator=result.data===true;
+  const nav=$("nav");
+  if(!nav)return;
+  const old=nav.querySelector('[data-tab="creatorReports"]');
+  if(mlIsCreator&&!old){
+    const button=document.createElement("button");button.type="button";button.className="alt";
+    button.dataset.tab="creatorReports";
+    button.textContent=mlCurrentSettings.language==="en"?"User reports":"Αναφορές χρηστών";
+    nav.append(button);
+  }else if(!mlIsCreator&&old)old.remove();
+}
+function mlSupportReportForm(holder){
+ holder.replaceChildren();
+ const form=document.createElement("form");
+ const categoryLabel=learningTextElement("label","Κατηγορία");
+ const category=document.createElement("select");
+ for(const [value,label] of [["problem","Πρόβλημα εφαρμογής"],["suggestion","Πρόταση βελτίωσης"],["question","Ερώτηση"],["other","Άλλο"]]){
+   const option=document.createElement("option");option.value=value;option.textContent=label;category.append(option);
+ }
+ const titleLabel=learningTextElement("label","Σύντομος τίτλος");
+ const title=document.createElement("input");title.type="text";title.required=true;
+ title.minLength=5;title.maxLength=160;title.placeholder="π.χ. Δεν ανοίγει η φωτογραφία";
+ const detailsLabel=learningTextElement("label","Τι ακριβώς συνέβη;");
+ const details=document.createElement("textarea");details.className="chatTextarea";
+ details.minLength=15;details.maxLength=5000;details.required=true;details.rows=6;
+ details.placeholder="Περιέγραψε τα βήματα που έκανες και τι εμφανίστηκε.";
+ const privacy=learningTextElement("p",
+   "Η αναφορά περιλαμβάνει το όνομα και το email του λογαριασμού σου και βασικά στοιχεία συσκευής. Μην γράφεις κωδικούς ή ευαίσθητα δεδομένα μαθητών.","learningHint");
+ const send=document.createElement("button");send.type="submit";send.textContent="📨 Υποβολή αναφοράς";
+ const cancel=document.createElement("button");cancel.type="button";cancel.className="alt";
+ cancel.textContent="Κλείσιμο";cancel.onclick=()=>holder.replaceChildren();
+ const status=learningTextElement("p","","learningHint");status.setAttribute("role","status");
+ form.append(categoryLabel,category,titleLabel,title,detailsLabel,details,privacy,send,cancel,status);
+ holder.append(form);
+ form.onsubmit=async event=>{
+   event.preventDefault();if(send.disabled||!form.reportValidity())return;
+   send.disabled=true;status.textContent="Καταχώριση αναφοράς...";
+   try{
+     const device=(navigator.userAgent||"").slice(0,350)+" · "+screen.width+"×"+screen.height;
+     const report=await supabase.rpc("mathlab_submit_support_report",{
+       p_category:category.value,
+       p_subject:title.value.trim(),
+       p_details:details.value.trim(),
+       p_device_info:device.slice(0,500)
+     });
+     if(report.error)throw report.error;
+     const id=report.data;
+     status.textContent="✓ Η αναφορά καταχωρίστηκε και ο Creator ειδοποιήθηκε μέσα στο MathLab.";
+     form.reset();
+     // Email requires a configured secure sending provider. A failed email must never
+     // erase or misrepresent the saved report.
+     try{
+       const response=await supabase.functions.invoke("mathlab-email-report",{body:{report_id:id}});
+       if(response.error)throw response.error;
+       if(response.data?.sent===true)
+         status.textContent="✓ Η αναφορά καταχωρίστηκε και στάλθηκε email στον Creator.";
+       else
+         status.textContent="✓ Η αναφορά καταχωρίστηκε. Η αποστολή email εκκρεμεί έως την ενεργοποίηση της υπηρεσίας.";
+     }catch(error){
+       status.textContent="✓ Η αναφορά καταχωρίστηκε και εμφανίζεται στον Creator. Η ειδοποίηση email εκκρεμεί.";
+     }
+   }catch(e){status.textContent="Δεν καταχωρίστηκε η αναφορά: "+(e?.message||String(e))}
+   finally{send.disabled=false}
+ };
+}
+async function mlCreatorReportsView(){
+ const root=$("view");root.replaceChildren();
+ const heading=document.createElement("section");heading.className="card";
+ heading.append(learningTextElement("h2","🛡 Αναφορές χρηστών — Creator"));
+ heading.append(learningTextElement("p","Οι αναφορές από όλα τα φροντιστήρια συγκεντρώνονται εδώ. Πρόσβαση έχει μόνο ο ιδιοκτήτης της πλατφόρμας.","learningHint"));
+ const reload=document.createElement("button");reload.type="button";reload.className="alt";reload.textContent="Ανανέωση";
+ const status=learningTextElement("p","","learningHint"),list=document.createElement("div");
+ heading.append(reload,status,list);root.append(heading);
+ async function refresh(){
+   if(!mlIsCreator){status.textContent="Δεν υπάρχει πρόσβαση Creator.";return}
+   status.textContent="Φόρτωση αναφορών...";
+   const result=await supabase.from("mathlab_support_reports")
+    .select("id,reporter_name,reporter_email,school_id,category,subject,details,device_info,status,created_at,emailed_at")
+    .order("created_at",{ascending:false}).limit(150);
+   if(result.error)throw result.error;
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   status.textContent=(result.data||[]).length+" αναφορές.";
+   if(!result.data?.length){
+     list.append(learningTextElement("p","Δεν υπάρχουν ακόμη αναφορές."));
+     return;
+   }
+   const labels={new:"Νέα",reviewing:"Σε εξέλιξη",resolved:"Επιλύθηκε"};
+   for(const issue of result.data){
+     const card=document.createElement("section");card.className="mlNotice"+(issue.status==="new"?" unread":"");
+     card.append(learningTextElement("strong",issue.subject));
+     card.append(learningTextElement("p",issue.reporter_name+" · "+(issue.reporter_email||"Χωρίς email")+
+       " · "+new Date(issue.created_at).toLocaleString("el-GR"),"learningHint"));
+     const body=learningTextElement("p",issue.details);body.style.whiteSpace="pre-wrap";
+     card.append(body);
+     const meta=learningTextElement("p",issue.device_info||"Χωρίς στοιχεία συσκευής","learningHint");
+     card.append(meta);
+     const row=document.createElement("div");row.className="learningInline";
+     const select=document.createElement("select");select.style.maxWidth="220px";
+     for(const [key,label] of Object.entries(labels)){
+       const option=document.createElement("option");option.value=key;option.textContent=label;select.append(option);
+     }
+     select.value=issue.status;
+     const save=document.createElement("button");save.type="button";save.className="alt";
+     save.textContent="Αποθήκευση κατάστασης";
+     const responseStatus=learningTextElement("span","","learningHint");
+     save.onclick=async()=>{
+       save.disabled=true;
+       try{
+         const result=await supabase.from("mathlab_support_reports")
+           .update({status:select.value}).eq("id",issue.id).select("id").single();
+         if(result.error)throw result.error;
+         responseStatus.textContent="✓ Αποθηκεύτηκε";
+       }catch(e){responseStatus.textContent="Σφάλμα: "+(e?.message||String(e))}
+       finally{save.disabled=false}
+     };
+     const emailStatus=learningTextElement("span",issue.emailed_at?"✓ Email στάλθηκε":"Email σε εκκρεμότητα","learningHint");
+     row.append(select,save,responseStatus,emailStatus);
+     if(!issue.emailed_at){
+       const retry=document.createElement("button");retry.type="button";retry.className="alt";
+       retry.textContent="↻ Αποστολή email";
+       retry.onclick=async()=>{
+         retry.disabled=true;emailStatus.textContent="Αποστολή email...";
+         try{
+           const result=await supabase.functions.invoke("mathlab-email-report",{body:{report_id:issue.id}});
+           if(result.error)throw result.error;
+           if(result.data?.sent===true){emailStatus.textContent="✓ Email στάλθηκε";retry.remove()}
+           else emailStatus.textContent="Η υπηρεσία email δεν έχει ακόμη ενεργοποιηθεί.";
+         }catch(e){emailStatus.textContent="Email σε εκκρεμότητα: "+(e?.message||String(e))}
+         finally{retry.disabled=false}
+       };
+       row.append(retry);
+     }
+     card.append(row);list.append(card);
+   }
+ }
+ reload.onclick=()=>refresh().catch(e=>status.textContent=e.message);
+ try{await refresh()}catch(e){status.textContent="Δεν φορτώθηκαν οι αναφορές: "+(e?.message||String(e))}
+}
+
 async function mlTenantCounts(){
  const id=mlTenantSchoolId;
  const [a,b,c]=await Promise.all([
@@ -3726,16 +3881,18 @@ async function mlTenantRouter(tab){
   tenantLessons:mlTenantLessonsView,
   tenantAssignments:mlTenantAssignmentsView,
   tenantMessages:mlTenantMessagesView,
+  creatorReports:mlCreatorReportsView,
   tenantStudentLessons:mlTenantStudentLessonsView,
   settings:mlSettingsView
  };
  const fn=routes[tab]||mlTenantHomeView;
  if(mlTenantRole==="student"&&!["tenantStudentLessons","tenantMessages","settings"].includes(tab))return;
+ if(tab==="creatorReports"&&!mlIsCreator)return;
  if(mlTenantRole!=="student"&&tab==="tenantStudentLessons")return;
  await fn();mlApplyLanguage();
 }
 
-async function view(table){if(table==="notifications")return mlNotificationsView();if(table==="settings")return mlSettingsView();if(table==="assignments")return learningAdminAssignmentsView();if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
+async function view(table){if(table==="creatorReports")return mlCreatorReportsView();if(table==="notifications")return mlNotificationsView();if(table==="settings")return mlSettingsView();if(table==="assignments")return learningAdminAssignmentsView();if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
   let user=signedInUser;
   if(!user){
@@ -3885,6 +4042,7 @@ async function view(table){if(table==="notifications")return mlNotificationsView
   else if(profile.role==="student"){setCurrentSection("studentCalendar");studentCalendarView(user);}
   else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή</h2><p>Δεν υπάρχουν δικαιώματα διαχείρισης.</p></div>';
   mlLoadUserSettings(user.id).catch(error=>console.warn("Ρυθμίσεις εμφάνισης:",error));
+  await mlRefreshCreatorStatus();
   if(["admin","student","teacher"].includes(profile.role))mlStartNotifications(user.id);
 
  }catch(err){
@@ -4050,4 +4208,4 @@ $("mlSchoolStudentSignupForm").onsubmit=async event=>{
  finally{button.disabled=false}
 };
 
-$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{mlStopNotifications();mlTenantSchoolId=null;mlTenantRole=null;mlTenantSchoolName="";mlTenantTeacherName="";mlLegacyTeacherName="";mlSettingsUserId=null;mlCurrentSettings={...mlDefaultSettings};mlApplyAppearance(mlCurrentSettings);await supabase.auth.signOut();profile=null;screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});document.addEventListener("visibilitychange",()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge();if(!document.hidden)mlRefreshNotifications()});setInterval(()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()},60000);start();</script></body></html>
+$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{mlStopNotifications();mlTenantSchoolId=null;mlTenantRole=null;mlTenantSchoolName="";mlTenantTeacherName="";mlLegacyTeacherName="";mlIsCreator=false;mlSettingsUserId=null;mlCurrentSettings={...mlDefaultSettings};mlApplyAppearance(mlCurrentSettings);await supabase.auth.signOut();profile=null;screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});document.addEventListener("visibilitychange",()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge();if(!document.hidden)mlRefreshNotifications()});setInterval(()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()},60000);start();</script></body></html>
