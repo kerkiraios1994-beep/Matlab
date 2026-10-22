@@ -50,7 +50,232 @@ body.learningModalOpen{overflow:hidden}
 .learningCameraPreviews{display:flex;flex-wrap:wrap;gap:7px;margin:7px 0}
 .learningCameraChip{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:5px 7px;background:#f6eaf0}
 .learningCameraChip button{padding:4px 9px;min-height:30px}
-</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span>MathLab</span></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="invitePanel" class="card hide"><h1>Πρόσκληση μαθητή</h1><p>Δημιούργησε τον δικό σου λογαριασμό MathLab.</p><form id="inviteSignupForm"><label>Όνομα</label><input name="first_name" maxlength="60" autocomplete="given-name" required><label>Επίθετο</label><input name="last_name" maxlength="60" autocomplete="family-name" required><label>Τηλέφωνο</label><input type="tel" name="phone" maxlength="30" autocomplete="tel" required><label>Τάξη</label><input name="grade" maxlength="60" required placeholder="π.χ. Β΄ Γυμνασίου"><label>Email</label><input type="email" name="email" required autocomplete="email"><label>Προσωπικός κωδικός (τουλάχιστον 12 χαρακτήρες)</label><input type="password" name="password" minlength="12" required autocomplete="new-password"><button type="submit" id="signupStudentBtn">Δημιουργία λογαριασμού</button></form><button type="button" class="alt" id="inviteExistingLogin">Έχω ήδη λογαριασμό – Σύνδεση</button><p id="inviteStatus" role="status"></p></div><div id="recovery" class="card hide"><h1>Νέος κωδικός</h1><form id="passwordForm"><label>Ορισμός κωδικού (τουλάχιστον 12 χαρακτήρες)</label><input id="newPassword" type="password" minlength="12" required autocomplete="new-password"><button>Αποθήκευση</button></form><p id="recoveryMessage"></p></div><section id="dashboard" class="hide"><div class="card mathlabWelcome"><h1>Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab</h1><p id="profile" class="welcomeName"></p><button class="alt" id="logout">Έξοδος</button></div><div class="appToolbar"><strong id="currentSection">MathLab</strong></div><div id="menuBackdrop" class="menuBackdrop hide"></div><nav id="nav" class="sideMenu" aria-label="Ενότητες MathLab"></nav><div id="view"></div></section></main><script type="module">import{createClient}from "https://esm.sh/@supabase/supabase-js@2.76.1";const supabase=createClient("https://terlbwqcmrfsjhagtxch.supabase.co","sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0");const $=x=>document.getElementById(x),escapeHtml=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));let profile=null;let claimedInvite=false;const inviteToken=new URLSearchParams(location.search).get("invite")||"";function screen(id){for(let a of ["auth","dashboard","recovery","invitePanel"])$(a).classList.toggle("hide",a!==id);$("menuToggle")?.classList.toggle("hide",id!=="dashboard");if(id!=="dashboard")$("nav")?.classList.remove("open")}const tabs={learning:["Εκπαιδευτικό υλικό",[]],messages:["Μηνύματα",[]],invites:["Προσκλήσεις",[]],calendar:["Ημερολόγιο",[]],students:["Μαθητές",["full_name","grade"]],classes:["Τμήματα",["name","weekday","starts_at","ends_at"]],attendance:["Απουσίες",["session_date","status"]],assignments:["Εργασίες",["title","due_date"]],grades:["Βαθμολογίες",["title","score","max_score"]],invoices:["Δίδακτρα",["period","amount","paid_amount"]],announcements:["Ανακοινώσεις",["title","body"]]};let studentToken="";async function studentApi(method,params="",payload){if(!studentToken)throw new Error("Η σύνδεση χρειάζεται ανανέωση. Κάνε είσοδο ξανά.");const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);try{const res=await fetch("https://terlbwqcmrfsjhagtxch.supabase.co/rest/v1/students"+params,{method,headers:{"apikey":"sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0","Authorization":"Bearer "+studentToken,"Content-Type":"application/json","Prefer":method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation"},body:payload?JSON.stringify(payload):undefined,signal:ctl.signal});let body=await res.json().catch(()=>null);if(!res.ok)throw new Error((body?.message||body?.details||body?.hint||"HTTP "+res.status)+" (HTTP "+res.status+")");return body||[]}catch(e){if(e.name==="AbortError")throw new Error("Η επικοινωνία με τη βάση ξεπέρασε τα 10 δευτερόλεπτα.");throw e}finally{clearTimeout(timer)}}let studentRecords=[];const levels={primary:"Δημοτικό",middle:"Γυμνάσιο",high:"Λύκειο"};function studentList(q=""){const rows=studentRecords.filter(s=>[s.full_name,s.grade,levels[s.level],s.phone||""].join(" ").toLocaleLowerCase("el").includes(q.toLocaleLowerCase("el")));$("studentRows").innerHTML=rows.map(s=>'<tr><td>'+escapeHtml(s.full_name)+'</td><td>'+escapeHtml(levels[s.level])+'</td><td>'+escapeHtml(s.grade)+'</td><td>'+escapeHtml(s.phone||"—")+'</td><td>'+(s.monthly_tuition==null?"—":Number(s.monthly_tuition).toLocaleString("el-GR",{style:"currency",currency:"EUR"}))+'</td><td>'+escapeHtml(s.email||"—")+'</td><td>'+(s.user_id?"Ενεργός":"Δεν έχει ενεργοποιηθεί")+'</td><td><button class="alt" data-edit-student="'+escapeHtml(s.id)+'">Επεξεργασία</button><button type="button" class="danger" data-delete-student="'+escapeHtml(s.id)+'">Διαγραφή</button></td></tr>').join("")||'<tr><td colspan="8">Δεν βρέθηκαν μαθητές.</td></tr>'}function studentForm(s){const id=s?.id||"";return '<div class="card" id="studentEditor"><h2>'+(id?'Επεξεργασία μαθητή':'Νέος μαθητής')+'</h2><form id="studentForm"><input type="hidden" name="id" value="'+escapeHtml(id)+'"><label>Ονοματεπώνυμο</label><input name="full_name" required maxlength="150" value="'+escapeHtml(s?.full_name||"")+'"><label>Βαθμίδα</label><select name="level" required>'+Object.entries(levels).map(([v,t])=>'<option value="'+v+'" '+(s?.level===v?'selected':'')+'>'+t+'</option>').join("")+'</select><label>Τάξη</label><input name="grade" maxlength="60" required value="'+escapeHtml(s?.grade||"")+'" placeholder="π.χ. Β΄ Γυμνασίου"><label>Κινητό</label><input name="phone" type="tel" maxlength="30" value="'+escapeHtml(s?.phone||"")+'"><label>Μηνιαία δίδακτρα (€)</label><input name="monthly_tuition" type="number" min="0" step="0.01" inputmode="decimal" placeholder="π.χ. 80" value="'+escapeHtml(s?.monthly_tuition??"")+'"><label><input type="checkbox" name="active" style="width:auto" '+(s?.active!==false?'checked':'')+'> Ενεργός μαθητής</label><p><button type="button" id="saveStudentBtn">Αποθήκευση</button> <button type="button" class="alt" id="cancelStudent">Ακύρωση</button></p><p id="studentStatus" role="status"></p></form></div>'}async function studentsView(){ $("view").innerHTML='<div class="card">Φόρτωση μαθητών...</div>';let data;try{const answer=await supabase.from("students").select("id,full_name,level,grade,active,phone,monthly_tuition,email,user_id").order("full_name");if(answer.error)throw answer.error;data=answer.data||[]}catch(error){$("view").innerHTML='<div class="card">Δεν φορτώθηκαν οι μαθητές: '+escapeHtml(error.message)+'</div>';return}studentRecords=data||[];$("view").innerHTML='<div class="card"><h2>Μαθητές ('+studentRecords.length+')</h2><p id="savedStudentNames" class="muted">Αποθηκευμένοι: '+studentRecords.map(s=>escapeHtml(s.full_name)+(s.active===false?" (ανενεργός)":"")).join(", ")+'</p>'+(profile?.role==="admin"?'<button id="addStudent">+ Προσθήκη μαθητή</button>':'')+'<label for="studentSearch">Αναζήτηση μαθητή</label><input id="studentSearch" placeholder="Όνομα ή τάξη"><div class="scroll"><table><thead><tr><th>Ονοματεπώνυμο</th><th>Βαθμίδα</th><th>Τάξη</th><th>Κινητό</th><th>Δίδακτρα/μήνα</th><th>Email</th><th>Λογαριασμός</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div></div><div id="deleteStudentStatus" class="card hide" role="status"></div><div id="studentFormSlot"></div>';studentList()}$("view").addEventListener("input",e=>{if(e.target.id==="studentSearch")studentList(e.target.value)});$("view").addEventListener("click",e=>{if(e.target.id==="addStudent")$("studentFormSlot").innerHTML=studentForm(null);if(e.target.id==="cancelStudent")$("studentFormSlot").innerHTML="";if(e.target.dataset.editStudent&&profile?.role==="admin"){let s=studentRecords.find(x=>x.id===e.target.dataset.editStudent);if(s){$("studentFormSlot").innerHTML=studentForm(s);$("studentEditor").scrollIntoView({behavior:"smooth"})}}});
+</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span>MathLab</span></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="invitePanel" class="card hide"><h1>Πρόσκληση μαθητή</h1><p>Δημιούργησε τον δικό σου λογαριασμό MathLab.</p><form id="inviteSignupForm"><label>Όνομα</label><input name="first_name" maxlength="60" autocomplete="given-name" required><label>Επίθετο</label><input name="last_name" maxlength="60" autocomplete="family-name" required><label>Τηλέφωνο</label><input type="tel" name="phone" maxlength="30" autocomplete="tel" required><label>Τάξη</label><input name="grade" maxlength="60" required placeholder="π.χ. Β΄ Γυμνασίου"><label>Email</label><input type="email" name="email" required autocomplete="email"><label>Προσωπικός κωδικός (τουλάχιστον 12 χαρακτήρες)</label><input type="password" name="password" minlength="12" required autocomplete="new-password"><button type="submit" id="signupStudentBtn">Δημιουργία λογαριασμού</button></form><button type="button" class="alt" id="inviteExistingLogin">Έχω ήδη λογαριασμό – Σύνδεση</button><p id="inviteStatus" role="status"></p></div><div id="recovery" class="card hide"><h1>Νέος κωδικός</h1><form id="passwordForm"><label>Ορισμός κωδικού (τουλάχιστον 12 χαρακτήρες)</label><input id="newPassword" type="password" minlength="12" required autocomplete="new-password"><button>Αποθήκευση</button></form><p id="recoveryMessage"></p></div><section id="dashboard" class="hide"><div class="card mathlabWelcome"><h1>Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab</h1><p id="profile" class="welcomeName"></p><button class="alt" id="logout">Έξοδος</button></div><div class="appToolbar"><strong id="currentSection">MathLab</strong></div><div id="menuBackdrop" class="menuBackdrop hide"></div><nav id="nav" class="sideMenu" aria-label="Ενότητες MathLab"></nav><div id="view"></div></section></main><script type="module">import{createClient}from "https://esm.sh/@supabase/supabase-js@2.76.1";const supabase=createClient("https://terlbwqcmrfsjhagtxch.supabase.co","sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0");const $=x=>document.getElementById(x),escapeHtml=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const mlColorThemes={
+ rose:{accent:"#a36a89",soft:"#f8e9f0"},
+ blue:{accent:"#245caa",soft:"#e5efff"},
+ green:{accent:"#2d7852",soft:"#e4f7ed"},
+ purple:{accent:"#7950ad",soft:"#efe7fc"},
+ orange:{accent:"#ba632c",soft:"#fff0df"},
+ dark:{accent:"#4c5874",soft:"#e6e9f2"}
+};
+const mlPageBackgrounds={
+ blush:{bg:"#fffbfd",surface:"#ffffff",header:"#faedf3",text:"#61465a",muted:"#806b79",border:"#ead9e5"},
+ white:{bg:"#ffffff",surface:"#ffffff",header:"#f2f4f7",text:"#29364a",muted:"#546178",border:"#d5dde7"},
+ cream:{bg:"#fff7e9",surface:"#fffcf5",header:"#f7e8d6",text:"#594235",muted:"#756052",border:"#ead4b9"},
+ sky:{bg:"#ebf5ff",surface:"#fafcff",header:"#d8eaff",text:"#253e64",muted:"#58718e",border:"#c2d9f4"},
+ mint:{bg:"#eaf9f0",surface:"#fafffc",header:"#d5f0e1",text:"#244b3d",muted:"#557369",border:"#bbdfcc"},
+ lavender:{bg:"#f4edff",surface:"#fdfaff",header:"#eadffd",text:"#4f3d61",muted:"#756387",border:"#d9c7ea"},
+ charcoal:{bg:"#222936",surface:"#303a48",header:"#303b4a",text:"#f3f6ff",muted:"#bfccdd",border:"#56657c"}
+};
+const mlFontFamilies={
+ system:'system-ui,-apple-system,"Segoe UI",sans-serif',
+ arial:'Arial,Helvetica,sans-serif',verdana:'Verdana,Geneva,sans-serif',
+ georgia:'Georgia,"Times New Roman",serif',trebuchet:'"Trebuchet MS",Arial,sans-serif'
+};
+const mlDefaultSettings={color_theme:"rose",page_background:"blush",font_family:"system",font_size:16,language:"el"};
+let mlCurrentSettings={...mlDefaultSettings},mlSettingsUserId=null;
+function mlValidatedSettings(raw){
+ const x={...mlDefaultSettings};
+ if(raw&&Object.hasOwn(mlColorThemes,raw.color_theme))x.color_theme=raw.color_theme;
+ if(raw&&Object.hasOwn(mlPageBackgrounds,raw.page_background))x.page_background=raw.page_background;
+ if(raw&&Object.hasOwn(mlFontFamilies,raw.font_family))x.font_family=raw.font_family;
+ if(raw&&Number.isInteger(Number(raw.font_size))&&Number(raw.font_size)>=14&&Number(raw.font_size)<=22)x.font_size=Number(raw.font_size);
+ if(raw&&["el","en"].includes(raw.language))x.language=raw.language;
+ return x;
+}
+function mlApplyAppearance(settings){
+ const colors=mlColorThemes[settings.color_theme]||mlColorThemes.rose;
+ const page=mlPageBackgrounds[settings.page_background]||mlPageBackgrounds.blush;
+ for(const [key,value] of Object.entries({
+  "--ml-accent":colors.accent,"--ml-accent-soft":colors.soft,
+  "--ml-bg":page.bg,"--ml-surface":page.surface,"--ml-header":page.header,
+  "--ml-text":page.text,"--ml-muted":page.muted,"--ml-border":page.border,
+  "--ml-font-family":mlFontFamilies[settings.font_family]||mlFontFamilies.system,
+  "--ml-font-size":settings.font_size+"px"
+ }))document.documentElement.style.setProperty(key,value);
+ document.documentElement.lang=settings.language==="en"?"en":"el";
+}
+const mlMenuEnglish={
+ learning:"Learning materials",messages:"Messages",invites:"Invitations",
+ calendar:"Calendar",students:"Students",classes:"Classes",attendance:"Attendance",
+ assignments:"Assignments",grades:"Grades",invoices:"Tuition",announcements:"Announcements",
+ studentCalendar:"Calendar",studentMessages:"Messages",studentGrades:"My grades",studentLessons:"My lessons",
+ settings:"Settings"
+};
+const mlCommonEnglish={
+ "Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab":"Welcome to the modern MathLab learning center",
+ "Ρυθμίσεις":"Settings","Χρώμα εφαρμογής":"App color",
+ "Χρώμα φόντου":"Page background","Γραμματοσειρά":"Font",
+ "Μέγεθος γραμμάτων":"Text size","Γλώσσα εφαρμογής":"App language",
+ "Αλλαγή κωδικού":"Change password","Νέος κωδικός":"New password",
+ "Επιβεβαίωση κωδικού":"Confirm password",
+ "Αποθήκευση ρυθμίσεων":"Save settings","Ενημέρωση κωδικού":"Update password",
+ "Οι επιλογές σου αποθηκεύονται στον προσωπικό σου λογαριασμό.":"Your choices are saved to your own account.",
+ "Ημερολόγιο":"Calendar","Μηνύματα":"Messages","Οι βαθμοί μου":"My grades",
+ "Τα μαθήματά μου":"My lessons","Εργασίες":"Assignments",
+ "Εκπαιδευτικό υλικό":"Learning materials","Βαθμολογίες":"Grades",
+ "Προσκλήσεις":"Invitations","Μαθητές":"Students","Τμήματα":"Classes",
+ "Απουσίες":"Attendance","Δίδακτρα":"Tuition","Ανακοινώσεις":"Announcements",
+ "Ανανέωση":"Refresh","Αποθήκευση":"Save",
+ "Επιστροφή":"Back","Έξοδος":"Sign out","Άνοιγμα μαθήματος":"Open lesson",
+ "Ανέβασμα δικού μου εγγράφου":"Upload my document",
+ "Αποστολή εγγράφου":"Send document",
+ "Τα αρχεία που έχω στείλει":"My submitted files",
+ "Στείλτε μήνυμα στην κυρία Φωτεινή":"Send a message to Ms Fotini",
+ "Εργασίες μαθητών":"Student assignments","Μαθήματα":"Lessons",
+ "Άνοιγμα, διόρθωση και βαθμός":"Open, review and grade",
+ "Μολύβι":"Pen","Γόμα":"Eraser","Πληκτρολόγιο":"Keyboard",
+ "Μενού":"Menu","Βαθμός":"Grade","Με άριστα":"Out of",
+ "Τα αρχεία μου":"My files","Οι εργασίες μου":"My assignments",
+ "Ολοκλήρωση άσκησης":"Complete exercise","Ολοκληρωμένη ✓":"Completed ✓",
+ "Αποστολή μηνύματος":"Send message","Νέο μήνυμα":"New message",
+ "Επιλογή αρχείου από το κινητό":"Select file from phone",
+ "Λήψη φωτογραφίας":"Take photo",
+ "Εκπαιδευτικό υλικό":"Learning materials"
+};
+const mlOriginalText=new WeakMap();
+function mlTranslateVisible(root){
+ if(!root)return;
+ const english=mlCurrentSettings.language==="en";
+ const iterator=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+ const nodes=[];
+ while(iterator.nextNode())nodes.push(iterator.currentNode);
+ for(const node of nodes){
+   if(!node.parentElement||["SCRIPT","STYLE","TEXTAREA","OPTION"].includes(node.parentElement.tagName))continue;
+   if(!mlOriginalText.has(node)){
+     const value=node.nodeValue||"";
+     if(Object.hasOwn(mlCommonEnglish,value.trim()))mlOriginalText.set(node,value);
+   }
+   if(!mlOriginalText.has(node))continue;
+   const raw=mlOriginalText.get(node),prefix=raw.match(/^\s*/)?.[0]||"",suffix=raw.match(/\s*$/)?.[0]||"";
+   const value=english?prefix+mlCommonEnglish[raw.trim()]+suffix:raw;
+   if(node.nodeValue!==value)node.nodeValue=value;
+ }
+}
+function mlUpdateMenuLanguage(){
+ const en=mlCurrentSettings.language==="en";
+ for(const button of document.querySelectorAll("#nav [data-tab]")){
+   const id=button.dataset.tab;
+   const greek=id==="settings"?"Ρυθμίσεις":id.startsWith("student")?
+     ({studentCalendar:"Ημερολόγιο",studentMessages:"Μηνύματα",studentGrades:"Οι βαθμοί μου",studentLessons:"Τα μαθήματά μου"}[id]||id)
+     :(tabs[id]?.[0]||id);
+   const badge=button.textContent.match(/ \(\d+ (?:νέα|new)\)$/)?.[0]||"";
+   button.textContent=(en?(mlMenuEnglish[id]||greek):greek)+badge;
+ }
+ const selected=document.querySelector("#nav [aria-current='page']");
+ if(selected&&$("currentSection"))$("currentSection").textContent=selected.textContent.replace(/ \(\d+ (?:νέα|new)\)$/,"");
+ const menuLabel=$("menuToggle")?.querySelector("span");
+ if(menuLabel)menuLabel.textContent=en?"Menu":"Μενού";
+ if($("dashboard")&&!$("dashboard").classList.contains("hide")){
+   const heading=$("dashboard").querySelector("h1");
+   if(heading)heading.textContent=en?"Welcome to the modern MathLab learning center":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab";
+ }
+}
+function mlApplyLanguage(){
+ mlUpdateMenuLanguage();
+ mlTranslateVisible($("view"));
+ mlTranslateVisible($("dashboard"));
+}
+async function mlLoadUserSettings(userId){
+ mlSettingsUserId=userId;mlCurrentSettings={...mlDefaultSettings};mlApplyAppearance(mlCurrentSettings);
+ const result=await supabase.from("mathlab_user_settings")
+   .select("color_theme,page_background,font_family,font_size,language")
+   .eq("user_id",userId).maybeSingle();
+ if(result.error)throw result.error;
+ if(mlSettingsUserId!==userId)return;
+ mlCurrentSettings=mlValidatedSettings(result.data||mlDefaultSettings);
+ mlApplyAppearance(mlCurrentSettings);mlApplyLanguage();
+}
+async function mlSettingsView(){
+ if(!profile||!["admin","student"].includes(profile.role))return;
+ const english=mlCurrentSettings.language==="en",tr=(el,en)=>english?en:el;
+ $("view").innerHTML='<div class="card"><h2>Ρυθμίσεις</h2>'+
+  '<p class="muted">Οι επιλογές σου αποθηκεύονται στον προσωπικό σου λογαριασμό.</p>'+
+  '<form id="mlAppearanceForm"><label for="mlAccent">Χρώμα εφαρμογής</label><select id="mlAccent"></select>'+
+  '<label for="mlPageBackground">Χρώμα φόντου</label><select id="mlPageBackground"></select>'+
+  '<label for="mlFont">Γραμματοσειρά</label><select id="mlFont"></select>'+
+  '<label for="mlFontSize">Μέγεθος γραμμάτων</label>'+
+  '<div class="learningInline"><input id="mlFontSize" type="range" min="14" max="22" step="1" style="flex:1;width:auto;margin:8px"><span id="mlFontSizeLabel"></span></div>'+
+  '<label for="mlLanguage">Γλώσσα εφαρμογής</label><select id="mlLanguage"></select>'+
+  '<button type="submit" id="mlSaveAppearance">Αποθήκευση ρυθμίσεων</button><p id="mlAppearanceStatus" role="status"></p></form></div>'+
+  '<div class="card"><h2>Αλλαγή κωδικού</h2><form id="mlChangePassword">'+
+  '<label for="mlPassword1">Νέος κωδικός</label>'+
+  '<input id="mlPassword1" type="password" minlength="12" autocomplete="new-password" required>'+
+  '<label for="mlPassword2">Επιβεβαίωση κωδικού</label>'+
+  '<input id="mlPassword2" type="password" minlength="12" autocomplete="new-password" required>'+
+  '<p class="muted">Τουλάχιστον 12 χαρακτήρες. Ο κωδικός δεν αποθηκεύεται μαζί με τις ρυθμίσεις εμφάνισης.</p>'+
+  '<button type="submit" id="mlSavePassword">Ενημέρωση κωδικού</button>'+
+  '<p id="mlPasswordStatus" role="status"></p></form></div>';
+ const accent=$("mlAccent"),background=$("mlPageBackground"),font=$("mlFont"),size=$("mlFontSize"),language=$("mlLanguage");
+ function addOptions(el,options){
+   for(const [id,label] of options){
+     const option=document.createElement("option");option.value=id;option.textContent=label;el.append(option);
+   }
+ }
+ addOptions(accent,[["rose",tr("Ροζ","Rose")],["blue",tr("Μπλε","Blue")],["green",tr("Πράσινο","Green")],["purple",tr("Μωβ","Purple")],["orange",tr("Πορτοκαλί","Orange")],["dark",tr("Γκρι","Gray")]]);
+ addOptions(background,[["blush",tr("Απαλό ροζ","Soft pink")],["white",tr("Λευκό","White")],["cream",tr("Κρεμ","Cream")],["sky",tr("Γαλάζιο","Sky blue")],["mint",tr("Μέντα","Mint")],["lavender",tr("Λεβάντα","Lavender")],["charcoal",tr("Σκούρο","Dark")]]);
+ addOptions(font,[["system",tr("Προεπιλεγμένη","Default")],["arial","Arial"],["verdana","Verdana"],["georgia","Georgia"],["trebuchet","Trebuchet"]]);
+ addOptions(language,[["el",tr("Ελληνικά","Greek")],["en",tr("Αγγλικά","English")]]);
+ const current=()=>mlValidatedSettings({
+   color_theme:accent.value,page_background:background.value,
+   font_family:font.value,font_size:Number(size.value),language:language.value
+ });
+ function fill(){
+   accent.value=mlCurrentSettings.color_theme;background.value=mlCurrentSettings.page_background;
+   font.value=mlCurrentSettings.font_family;size.value=mlCurrentSettings.font_size;
+   language.value=mlCurrentSettings.language;
+   $("mlFontSizeLabel").textContent=size.value+" px";
+ }
+ fill();
+ const saved={...mlCurrentSettings};
+ const redraw=()=>{
+   $("mlFontSizeLabel").textContent=size.value+" px";
+   mlCurrentSettings=current();
+   mlApplyAppearance(mlCurrentSettings);mlApplyLanguage();
+ };
+ for(const el of [accent,background,font,size,language])el.oninput=redraw;
+ $("mlAppearanceForm").onsubmit=async event=>{
+   event.preventDefault();
+   const button=$("mlSaveAppearance"),status=$("mlAppearanceStatus");
+   button.disabled=true;status.textContent=tr("Αποθήκευση...","Saving...");
+   try{
+     const auth=await supabase.auth.getUser();
+     if(auth.error)throw auth.error;
+     if(!auth.data?.user||auth.data.user.id!==mlSettingsUserId)throw Error("Η σύνδεση έληξε.");
+     const value=current();
+     const result=await supabase.from("mathlab_user_settings").upsert({
+       user_id:auth.data.user.id,...value,updated_at:new Date().toISOString()
+     },{onConflict:"user_id"}).select("user_id").single();
+     if(result.error)throw result.error;
+     Object.assign(saved,value);
+     mlCurrentSettings=value;mlApplyAppearance(value);mlApplyLanguage();
+     status.textContent=value.language==="en"?"✓ Settings saved for your account.":"✓ Οι ρυθμίσεις αποθηκεύτηκαν στον λογαριασμό σου.";
+   }catch(error){
+     mlCurrentSettings={...saved};mlApplyAppearance(mlCurrentSettings);fill();mlApplyLanguage();
+     status.textContent="Δεν αποθηκεύτηκαν οι ρυθμίσεις: "+(error?.message||String(error));
+   }finally{button.disabled=false}
+ };
+ $("mlChangePassword").onsubmit=async event=>{
+   event.preventDefault();
+   const first=$("mlPassword1").value,second=$("mlPassword2").value;
+   const button=$("mlSavePassword"),status=$("mlPasswordStatus");
+   if(first.length<12){status.textContent=tr("Χρειάζονται τουλάχιστον 12 χαρακτήρες.","Use at least 12 characters.");return}
+   if(first!==second){status.textContent=tr("Οι κωδικοί δεν ταιριάζουν.","Passwords do not match.");return}
+   button.disabled=true;status.textContent=tr("Αλλαγή κωδικού...","Updating password...");
+   try{
+     const response=await supabase.auth.updateUser({password:first});
+     if(response.error)throw response.error;
+     $("mlPassword1").value="";$("mlPassword2").value="";
+     status.textContent=tr("✓ Ο κωδικός άλλαξε.","✓ Password updated.");
+   }catch(error){
+     status.textContent=tr("Δεν άλλαξε ο κωδικός: ","Password change failed: ")+(error?.message||String(error));
+   }finally{button.disabled=false}
+ };
+ mlApplyLanguage();
+}
+
+let profile=null;let claimedInvite=false;const inviteToken=new URLSearchParams(location.search).get("invite")||"";function screen(id){for(let a of ["auth","dashboard","recovery","invitePanel"])$(a).classList.toggle("hide",a!==id);$("menuToggle")?.classList.toggle("hide",id!=="dashboard");if(id!=="dashboard")$("nav")?.classList.remove("open")}const tabs={learning:["Εκπαιδευτικό υλικό",[]],messages:["Μηνύματα",[]],invites:["Προσκλήσεις",[]],calendar:["Ημερολόγιο",[]],students:["Μαθητές",["full_name","grade"]],classes:["Τμήματα",["name","weekday","starts_at","ends_at"]],attendance:["Απουσίες",["session_date","status"]],assignments:["Εργασίες",["title","due_date"]],grades:["Βαθμολογίες",["title","score","max_score"]],invoices:["Δίδακτρα",["period","amount","paid_amount"]],announcements:["Ανακοινώσεις",["title","body"]]};let studentToken="";async function studentApi(method,params="",payload){if(!studentToken)throw new Error("Η σύνδεση χρειάζεται ανανέωση. Κάνε είσοδο ξανά.");const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);try{const res=await fetch("https://terlbwqcmrfsjhagtxch.supabase.co/rest/v1/students"+params,{method,headers:{"apikey":"sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0","Authorization":"Bearer "+studentToken,"Content-Type":"application/json","Prefer":method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation"},body:payload?JSON.stringify(payload):undefined,signal:ctl.signal});let body=await res.json().catch(()=>null);if(!res.ok)throw new Error((body?.message||body?.details||body?.hint||"HTTP "+res.status)+" (HTTP "+res.status+")");return body||[]}catch(e){if(e.name==="AbortError")throw new Error("Η επικοινωνία με τη βάση ξεπέρασε τα 10 δευτερόλεπτα.");throw e}finally{clearTimeout(timer)}}let studentRecords=[];const levels={primary:"Δημοτικό",middle:"Γυμνάσιο",high:"Λύκειο"};function studentList(q=""){const rows=studentRecords.filter(s=>[s.full_name,s.grade,levels[s.level],s.phone||""].join(" ").toLocaleLowerCase("el").includes(q.toLocaleLowerCase("el")));$("studentRows").innerHTML=rows.map(s=>'<tr><td>'+escapeHtml(s.full_name)+'</td><td>'+escapeHtml(levels[s.level])+'</td><td>'+escapeHtml(s.grade)+'</td><td>'+escapeHtml(s.phone||"—")+'</td><td>'+(s.monthly_tuition==null?"—":Number(s.monthly_tuition).toLocaleString("el-GR",{style:"currency",currency:"EUR"}))+'</td><td>'+escapeHtml(s.email||"—")+'</td><td>'+(s.user_id?"Ενεργός":"Δεν έχει ενεργοποιηθεί")+'</td><td><button class="alt" data-edit-student="'+escapeHtml(s.id)+'">Επεξεργασία</button><button type="button" class="danger" data-delete-student="'+escapeHtml(s.id)+'">Διαγραφή</button></td></tr>').join("")||'<tr><td colspan="8">Δεν βρέθηκαν μαθητές.</td></tr>'}function studentForm(s){const id=s?.id||"";return '<div class="card" id="studentEditor"><h2>'+(id?'Επεξεργασία μαθητή':'Νέος μαθητής')+'</h2><form id="studentForm"><input type="hidden" name="id" value="'+escapeHtml(id)+'"><label>Ονοματεπώνυμο</label><input name="full_name" required maxlength="150" value="'+escapeHtml(s?.full_name||"")+'"><label>Βαθμίδα</label><select name="level" required>'+Object.entries(levels).map(([v,t])=>'<option value="'+v+'" '+(s?.level===v?'selected':'')+'>'+t+'</option>').join("")+'</select><label>Τάξη</label><input name="grade" maxlength="60" required value="'+escapeHtml(s?.grade||"")+'" placeholder="π.χ. Β΄ Γυμνασίου"><label>Κινητό</label><input name="phone" type="tel" maxlength="30" value="'+escapeHtml(s?.phone||"")+'"><label>Μηνιαία δίδακτρα (€)</label><input name="monthly_tuition" type="number" min="0" step="0.01" inputmode="decimal" placeholder="π.χ. 80" value="'+escapeHtml(s?.monthly_tuition??"")+'"><label><input type="checkbox" name="active" style="width:auto" '+(s?.active!==false?'checked':'')+'> Ενεργός μαθητής</label><p><button type="button" id="saveStudentBtn">Αποθήκευση</button> <button type="button" class="alt" id="cancelStudent">Ακύρωση</button></p><p id="studentStatus" role="status"></p></form></div>'}async function studentsView(){ $("view").innerHTML='<div class="card">Φόρτωση μαθητών...</div>';let data;try{const answer=await supabase.from("students").select("id,full_name,level,grade,active,phone,monthly_tuition,email,user_id").order("full_name");if(answer.error)throw answer.error;data=answer.data||[]}catch(error){$("view").innerHTML='<div class="card">Δεν φορτώθηκαν οι μαθητές: '+escapeHtml(error.message)+'</div>';return}studentRecords=data||[];$("view").innerHTML='<div class="card"><h2>Μαθητές ('+studentRecords.length+')</h2><p id="savedStudentNames" class="muted">Αποθηκευμένοι: '+studentRecords.map(s=>escapeHtml(s.full_name)+(s.active===false?" (ανενεργός)":"")).join(", ")+'</p>'+(profile?.role==="admin"?'<button id="addStudent">+ Προσθήκη μαθητή</button>':'')+'<label for="studentSearch">Αναζήτηση μαθητή</label><input id="studentSearch" placeholder="Όνομα ή τάξη"><div class="scroll"><table><thead><tr><th>Ονοματεπώνυμο</th><th>Βαθμίδα</th><th>Τάξη</th><th>Κινητό</th><th>Δίδακτρα/μήνα</th><th>Email</th><th>Λογαριασμός</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div></div><div id="deleteStudentStatus" class="card hide" role="status"></div><div id="studentFormSlot"></div>';studentList()}$("view").addEventListener("input",e=>{if(e.target.id==="studentSearch")studentList(e.target.value)});$("view").addEventListener("click",e=>{if(e.target.id==="addStudent")$("studentFormSlot").innerHTML=studentForm(null);if(e.target.id==="cancelStudent")$("studentFormSlot").innerHTML="";if(e.target.dataset.editStudent&&profile?.role==="admin"){let s=studentRecords.find(x=>x.id===e.target.dataset.editStudent);if(s){$("studentFormSlot").innerHTML=studentForm(s);$("studentEditor").scrollIntoView({behavior:"smooth"})}}});
 
 let deletingStudent=false;
 async function removeStudent(id,button) {
