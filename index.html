@@ -123,6 +123,47 @@ body #mlFontSize{accent-color:var(--ml-accent)!important}
 .mlScanTools button{padding:9px 12px;margin:2px;font-size:13px}
 .mlScanPdfPreview{width:100%;overflow:auto}
 @media(max-width:550px){.mlScanQueue{grid-template-columns:repeat(2,minmax(0,1fr))}.mlScanQueueActions button{flex:1 0 auto;font-size:11px}.mlScanQueueItem .mlScanThumbnail{height:125px}}
+
+/* Mobile, tablet, laptop, desktop and touch-enabled interactive whiteboards */
+html,body{width:100%;min-height:100%;overflow-x:hidden}
+main{width:100%}
+#view,.card,.learningCard,.learningFullscreenScroll{min-width:0}
+#view img,#view video,#view canvas{max-width:100%}
+#view .scroll,#view table{max-width:100%}
+#view .scroll{overflow-x:auto}
+#view .grid{grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr))}
+#view .learningInline{align-items:center;flex-wrap:wrap}
+input,textarea,select{max-width:100%;min-width:0}
+button{touch-action:manipulation}
+@media(min-width:1120px){
+ main{max-width:min(94vw,1350px);padding:20px 30px}
+ .card{padding:25px 30px}
+ .learningFullscreenScroll>.learningCard,.learningFullscreenScroll>.learningQuestion{max-width:min(96vw,1450px)}
+}
+@media(min-width:1700px){
+ main{max-width:min(94vw,1600px)}
+ .mathlabHeader{min-height:85px}
+ .sideMenu{width:380px}
+ .sideMenu button{min-height:55px;font-size:18px}
+ .learningMathSymbols button{min-width:58px;min-height:54px;font-size:24px}
+ .pdfPageControls button,.learningZoomControls button{min-height:52px;min-width:52px}
+}
+@media(max-width:700px){
+ .card,.learningCard{max-width:100%}
+ .learningFullscreenScroll{padding-bottom:max(35px,env(safe-area-inset-bottom))}
+ .monthgrid{min-width:0}
+ .messageSplit{grid-template-columns:1fr}
+ #view button{min-height:40px}
+}
+@media(hover:none) and (pointer:coarse){
+ button,.learningMathSymbols button,.learningCameraLabel{min-height:46px}
+ input[type="checkbox"],input[type="radio"]{min-width:20px;min-height:20px}
+}
+body.mlBoardMode{font-size:max(19px,var(--ml-font-size))}
+body.mlBoardMode main{max-width:98vw}
+body.mlBoardMode .sideMenu{width:min(440px,90vw)}
+body.mlBoardMode button,body.mlBoardMode select{min-height:54px;font-size:max(19px,1em)}
+body.mlBoardMode .learningMathSymbols button{min-width:58px;min-height:54px;font-size:23px}
 </style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span class="mathlabBrand">MathLab</span><button type="button" id="mlNotificationBell" class="alt hide" aria-label="Ειδοποιήσεις" title="Ειδοποιήσεις">🔔 <span id="mlNotificationCount" class="mlNotificationCount hide"></span></button></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><button type="button" class="alt" id="mlOpenTeacherSignup">Είμαι καθηγητής — Δημιουργία δικού μου φροντιστηρίου</button><p id="message" role="status"></p></div><div id="teacherSignupPanel" class="card hide">
  <h1>Δημιουργία δικού μου ψηφιακού φροντιστηρίου</h1>
  <p class="learningHint">Κάθε καθηγητής αποκτά ιδιωτικό χώρο με δικούς του μαθητές και μαθήματα. Χρειάζεται επιβεβαίωση email. Πρόκειται για δοκιμαστική έκδοση πριν το Play Store.</p>
@@ -307,8 +348,24 @@ async function mlSettingsView(){
   '<div class="card"><h2>🛟 Αναφορά προβλήματος</h2>'+
   '<p class="learningHint">Αν εντοπίσεις κάποιο πρόβλημα, στείλε αναφορά στον δημιουργό του MathLab. Η αναφορά θα καταγραφεί με ασφάλεια και μπορείς να παρακολουθήσεις την κατάστασή της.</p>'+
   '<button type="button" id="mlOpenIssueReport">📝 Αναφορά προβλήματος</button>'+
-  '<div id="mlIssueReportArea"></div></div>';
+  '<div id="mlIssueReportArea"></div></div>'+
+  '<div class="card"><h2>🖥 Εμφάνιση σε διαδραστικό πίνακα</h2>'+
+  '<p class="learningHint">Μεγαλύτερα κουμπιά και πλήρης οθόνη, εφόσον υποστηρίζεται.</p>'+
+  '<button type="button" id="mlBoardModeButton" class="alt">Ενεργοποίηση λειτουργίας πίνακα</button></div>';
  $("mlOpenIssueReport").onclick=()=>mlSupportReportForm($("mlIssueReportArea"));
+ const boardButton=$("mlBoardModeButton");
+ const boardLabel=()=>boardButton.textContent=document.body.classList.contains("mlBoardMode")?
+  "Απενεργοποίηση λειτουργίας πίνακα":"Ενεργοποίηση λειτουργίας πίνακα";
+ boardLabel();
+ boardButton.onclick=async()=>{
+  const activate=!document.body.classList.contains("mlBoardMode");
+  document.body.classList.toggle("mlBoardMode",activate);boardLabel();
+  if(activate&&document.documentElement.requestFullscreen){
+   try{await document.documentElement.requestFullscreen()}catch(error){console.info("Δεν είναι διαθέσιμη η πλήρης οθόνη.",error)}
+  }else if(!activate&&document.fullscreenElement){
+   try{await document.exitFullscreen()}catch(_){}
+  }
+ };
  const accent=$("mlAccent"),background=$("mlPageBackground"),font=$("mlFont"),size=$("mlFontSize"),language=$("mlLanguage");
  function addOptions(el,options){
    for(const [id,label] of options){
@@ -412,7 +469,7 @@ function mlApplyWelcome(){
  }else if(profile.role==="admin"){
    el.textContent=english?"Welcome, "+name+", to your own modern MathLab learning center":
     "Καλώς ήρθες, "+name+", στο δικό σου σύγχρονο φροντιστήριο MathLab";
-   sub.textContent=profile.full_name;
+   sub.textContent=profile.full_name+(mlIsCreator?" · Creator MathLab":"");
  }else if(profile.role==="student"&&mlTenantSchoolId){
    el.textContent=english?"Welcome, "+name+", to MathLab":"Καλώς ήρθες, "+name+", στο MathLab";
    sub.textContent=mlTenantSchoolName+" · "+mlTenantTeacherName;
@@ -3035,7 +3092,7 @@ function mlShowNotificationToast(record){
  if(existing)existing.remove();
  const toast=document.createElement("aside");toast.className="mlNotificationToast";
  toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");
- const title=document.createElement("strong");title.textContent="🔔 "+record.title;
+ const title=document.createElement("strong");title.textContent="🔔 "+mlTeacherPhrase(record.title);
  const text=document.createElement("p");text.textContent=record.body;
  const open=document.createElement("button");open.type="button";open.textContent="Προβολή ειδοποιήσεων";
  open.onclick=()=>{
@@ -3145,7 +3202,7 @@ async function mlNotificationsView(){
    for(const note of res.data){
      const card=document.createElement("section");
      card.className="mlNotice"+(note.read_at?"":" unread");
-     const heading=document.createElement("strong");heading.textContent=note.title;
+     const heading=document.createElement("strong");heading.textContent=mlTeacherPhrase(note.title);
      const desc=document.createElement("p");desc.textContent=note.body;
      const date=learningTextElement("p",(note.read_at?"Διαβάστηκε":"Αδιάβαστη")+" · "+new Date(note.created_at).toLocaleString("el-GR"),"learningHint");
      const action=document.createElement("button");action.type="button";action.className="alt";
@@ -3249,7 +3306,7 @@ function mlSupportReportForm(holder){
    event.preventDefault();if(send.disabled||!form.reportValidity())return;
    send.disabled=true;status.textContent="Καταχώριση αναφοράς...";
    try{
-     const device=(navigator.userAgent||"").slice(0,350)+" · "+screen.width+"×"+screen.height;
+     const device=(navigator.userAgent||"").slice(0,350)+" · "+(window.screen?.width||0)+"×"+(window.screen?.height||0);
      const report=await supabase.rpc("mathlab_submit_support_report",{
        p_category:category.value,
        p_subject:title.value.trim(),
@@ -4042,13 +4099,14 @@ async function view(table){if(table==="creatorReports")return mlCreatorReportsVi
   else if(profile.role==="student"){setCurrentSection("studentCalendar");studentCalendarView(user);}
   else $("view").innerHTML='<div class="card"><h2>Προσωπική περιοχή</h2><p>Δεν υπάρχουν δικαιώματα διαχείρισης.</p></div>';
   mlLoadUserSettings(user.id).catch(error=>console.warn("Ρυθμίσεις εμφάνισης:",error));
-  await mlRefreshCreatorStatus();
+  await mlRefreshCreatorStatus();mlApplyWelcome();
   if(["admin","student","teacher"].includes(profile.role))mlStartNotifications(user.id);
 
  }catch(err){
-   screen(inviteToken?"invitePanel":"auth");
+   screen(schoolInviteToken?"schoolInvitePanel":inviteToken?"invitePanel":"auth");
    const msg="Πρόβλημα σύνδεσης: "+(err?.message||String(err));
-   if(inviteToken)$("inviteStatus").textContent=msg;
+   if(schoolInviteToken)$("mlSchoolInviteStatus").textContent=msg;
+   else if(inviteToken)$("inviteStatus").textContent=msg;
    else $("message").textContent=msg;
  }
 };function setMenuOpen(open){$("nav").classList.toggle("open",open);$("menuBackdrop").classList.toggle("hide",!open);$("menuToggle").setAttribute("aria-expanded",String(open));$("menuToggle").setAttribute("aria-label",open?"Κλείσιμο μενού":"Άνοιγμα μενού");document.body.classList.toggle("menuOpen",open);if(open){$("nav").querySelector("button")?.focus()}else{$("menuToggle").focus()}}$("menuToggle").onclick=()=>setMenuOpen(!$("nav").classList.contains("open"));$("menuBackdrop").onclick=()=>setMenuOpen(false);document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$("nav").classList.contains("open"))setMenuOpen(false)});function setCurrentSection(id){const btn=$("nav").querySelector('[data-tab="'+id+'"]');if(!btn)return;$("currentSection").textContent=btn.textContent.replace(/ \(\d+ νέα\)$/,"");for(const b of $("nav").querySelectorAll("button[data-tab]")){if(b===btn)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")}};$("nav").onclick=async e=>{
