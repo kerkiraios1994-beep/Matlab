@@ -2322,7 +2322,7 @@ async function learningAdminAssignmentsView(){
      supabase.from("mathlab_learning_reviews").select("exercise_id,student_id,score,max_score,feedback,correction_drawing"),
      supabase.from("mathlab_learning_file_feedback").select("file_id,student_id,score,max_score,feedback,correction_strokes"),
      supabase.from("mathlab_learning_student_uploads")
-       .select("id,unit_id,student_id,storage_path,original_name,mime_type,size_bytes,comment,created_at")
+       .select("id,unit_id,student_id,batch_id,storage_path,original_name,mime_type,size_bytes,comment,created_at")
        .order("created_at",{ascending:false}).limit(500),
      supabase.from("mathlab_learning_upload_reviews")
        .select("upload_id,score,max_score,feedback,correction_strokes")
@@ -2358,13 +2358,24 @@ async function learningAdminAssignmentsView(){
        updated_at:note.updated_at});
    }
    const uploadReviewMap=new Map((uploadReviews.data||[]).map(r=>[r.upload_id,r]));
+   const batchGroups=new Map();
    for(const upload of uploaded.data||[]){
-     const review=uploadReviewMap.get(upload.id);
-     items.push({kind:"upload",item:upload,object:upload,
-       studentName:names.get(upload.student_id)||"Μαθητής",
-       title:titles.get(upload.unit_id)||"Μάθημα",
-       detail:upload.original_name+" — αρχείο που ανέβασε ο μαθητής",
-       submitted:true,graded:review?.score!=null,grade:review,updated_at:upload.created_at});
+     const key=(upload.batch_id||upload.id)+":"+upload.student_id;
+     if(!batchGroups.has(key)){
+       batchGroups.set(key,{kind:"upload_batch",uploads:[],studentName:names.get(upload.student_id)||"Μαθητής",
+         title:titles.get(upload.unit_id)||"Μάθημα",submitted:true,
+         updated_at:upload.created_at,detail:"",graded:false,grade:null});
+     }
+     const batch=batchGroups.get(key);
+     batch.uploads.push(upload);
+     if(Date.parse(upload.created_at)>Date.parse(batch.updated_at))batch.updated_at=upload.created_at;
+   }
+   for(const batch of batchGroups.values()){
+     const gradedCount=batch.uploads.filter(x=>uploadReviewMap.get(x.id)?.score!=null).length;
+     batch.graded=gradedCount===batch.uploads.length&&batch.uploads.length>0;
+     batch.detail="📎 "+batch.uploads.length+" φωτογραφίες/αρχεία στην ίδια αποστολή";
+     batch.progress=gradedCount+" από "+batch.uploads.length+" διορθωμένα";
+     items.push(batch);
    }
    items.sort((x,y)=>Date.parse(y.updated_at)-Date.parse(x.updated_at));
    status.textContent=items.length?
@@ -2376,7 +2387,8 @@ async function learningAdminAssignmentsView(){
      section.append(learningTextElement("p",item.detail));
      const desc=(item.submitted?"✓ Ολοκληρωμένη":"Αυτόματη αποθήκευση — σε εξέλιξη")+
        " · "+new Date(item.updated_at).toLocaleString("el-GR")+
-       (item.graded?" · Βαθμός: "+item.grade.score+" / "+item.grade.max_score:" · Χωρίς βαθμό");
+       (item.kind==="upload_batch"?" · "+item.progress:
+        item.graded?" · Βαθμός: "+item.grade.score+" / "+item.grade.max_score:" · Χωρίς βαθμό");
      section.append(learningTextElement("p",desc,"learningHint"));
      const btn=document.createElement("button");btn.type="button";btn.className="alt";
      btn.textContent="Άνοιγμα, διόρθωση και βαθμός";
@@ -2388,8 +2400,23 @@ async function learningAdminAssignmentsView(){
          review.replaceChildren();
          if(item.kind==="exercise")
            await learningTeacherExerciseReview(review,item.item,item.object,item.studentName,item.grade);
-         else if(item.kind==="upload")
-           await learningTeacherStudentUploadReview(review,item.item,item.studentName,item.grade);
+         else if(item.kind==="upload_batch"){
+           for(const [index,upload] of item.uploads.entries()){
+             const block=document.createElement("section");block.className="learningCard";
+             const openFile=document.createElement("button");openFile.type="button";openFile.className="alt";
+             openFile.textContent="📎 "+(index+1)+"/"+item.uploads.length+" — "+upload.original_name;
+             const details=document.createElement("div");block.append(openFile,details);review.append(block);
+             openFile.onclick=async()=>{
+               if(details.hasChildNodes()){details.replaceChildren();return}
+               openFile.disabled=true;details.textContent="Φόρτωση εγγράφου...";
+               try{
+                 details.replaceChildren();
+                 await learningTeacherStudentUploadReview(details,upload,item.studentName,uploadReviewMap.get(upload.id));
+               }catch(error){details.textContent="Δεν φορτώθηκε το αρχείο: "+(error?.message||String(error))}
+               finally{openFile.disabled=false}
+             };
+           }
+         }
          else
            await learningTeacherFileReview(review,item.item,item.object,item.studentName,item.grade);
        }catch(e){review.textContent="Δεν φορτώθηκε η εργασία: "+(e?.message||String(e))}
