@@ -332,6 +332,10 @@ async function mlLoadUserSettings(userId){
  mlCurrentSettings=mlValidatedSettings(result.data||mlDefaultSettings);
  mlApplyAppearance(mlCurrentSettings);mlApplyLanguage();
 }
+
+function mlMenuKey(){return "mathlab-menu-order-"+(mlSettingsUserId||"anonymous")}
+function mlApplyMenuOrder(){const nav=$("nav");if(!nav)return;let order=[];try{const v=JSON.parse(localStorage.getItem(mlMenuKey())||"[]");if(Array.isArray(v))order=v.filter(x=>typeof x==="string")}catch(_){}const buttons=[...nav.querySelectorAll("button[data-tab]")];buttons.sort((a,b)=>{const ai=order.indexOf(a.dataset.tab),bi=order.indexOf(b.dataset.tab);return(ai<0?1e4:ai)-(bi<0?1e4:bi)});buttons.forEach(b=>nav.append(b))}
+function mlMenuOrderSettings(){const list=$("mlMenuOrderList"),status=$("mlMenuOrderStatus");if(!list)return;const redraw=()=>{list.replaceChildren();const buttons=[...$("nav").querySelectorAll("button[data-tab]")];buttons.forEach((button,index)=>{const row=document.createElement("div");row.className="learningInline";row.style.cssText="justify-content:space-between;border:1px solid var(--ml-border);border-radius:10px;padding:7px;margin:6px 0";const label=document.createElement("strong");label.textContent=button.textContent;const actions=document.createElement("span");for(const [dir,symbol,title] of [[-1,"↑","Πάνω"],[1,"↓","Κάτω"]]){const move=document.createElement("button");move.type="button";move.className="alt";move.textContent=symbol;move.title=title;move.setAttribute("aria-label",title+" "+button.textContent);move.disabled=index+dir<0||index+dir>=buttons.length;move.onclick=()=>{const ordered=[...$("nav").querySelectorAll("button[data-tab]")],swap=ordered[index+dir];if(!swap)return;if(dir<0)$("nav").insertBefore(button,swap);else $("nav").insertBefore(swap,button);redraw();status.textContent="Η νέα σειρά είναι έτοιμη για αποθήκευση."};actions.append(move)}row.append(label,actions);list.append(row)})};$("mlSaveMenuOrder").onclick=()=>{try{localStorage.setItem(mlMenuKey(),JSON.stringify([...$("nav").querySelectorAll("button[data-tab]")].map(b=>b.dataset.tab)));status.textContent="✓ Η σειρά αποθηκεύτηκε σε αυτή τη συσκευή."}catch(e){status.textContent="Δεν ήταν δυνατή η αποθήκευση: "+e.message}};$("mlResetMenuOrder").onclick=()=>{try{localStorage.removeItem(mlMenuKey())}catch(_){}status.textContent="Η αρχική σειρά θα επανέλθει στην επόμενη σύνδεση."};redraw()}
 async function mlSettingsView(){
  if(!profile||!["admin","student","teacher"].includes(profile.role))return;
  const english=mlCurrentSettings.language==="en",tr=(el,en)=>english?en:el;
@@ -344,6 +348,7 @@ async function mlSettingsView(){
   '<div class="learningInline"><input id="mlFontSize" type="range" min="14" max="22" step="1" style="flex:1;width:auto;margin:8px"><span id="mlFontSizeLabel"></span></div>'+
   '<label for="mlLanguage">Γλώσσα εφαρμογής</label><select id="mlLanguage"></select>'+
   '<button type="submit" id="mlSaveAppearance">Αποθήκευση ρυθμίσεων</button><p id="mlAppearanceStatus" role="status"></p></form></div>'+
+  '<div class="card"><h2>Σειρά μενού</h2><p class="learningHint">Όρισε με τα βελάκια τη σειρά που εμφανίζεται το προσωπικό σου μενού. Αποθηκεύεται σε αυτή τη συσκευή.</p><div id="mlMenuOrderList"></div><button type="button" id="mlSaveMenuOrder">Αποθήκευση σειράς</button><button type="button" class="alt" id="mlResetMenuOrder">Επαναφορά</button><p id="mlMenuOrderStatus" role="status"></p></div>'+ 
   '<div class="card"><h2>Το όνομά μου</h2>'+
   '<p class="learningHint">Αυτό το όνομα θα εμφανίζεται στο προσωπικό σου καλωσόρισμα και στις συνομιλίες του MathLab.</p>'+
   '<form id="mlDisplayNameForm">'+
@@ -403,6 +408,7 @@ async function mlSettingsView(){
    try{await document.exitFullscreen()}catch(_){}
   }
  };
+ mlApplyMenuOrder();mlMenuOrderSettings();
  const accent=$("mlAccent"),background=$("mlPageBackground"),font=$("mlFont"),size=$("mlFontSize"),language=$("mlLanguage");
  function addOptions(el,options){
    for(const [id,label] of options){
@@ -4125,9 +4131,10 @@ async function view(table){if(table==="creatorReports")return mlCreatorReportsVi
   const currentTabs=profile.role==="admin"?Object.entries(tabs):
     hasTenant?(profile.role==="teacher"?teacherTabs:studentTabs):
     profile.role==="student"?oldStudentTabs:[];
-  $("nav").innerHTML=currentTabs.map(([id,item])=>
+  mlSettingsUserId=user.id;
+ $("nav").innerHTML=currentTabs.map(([id,item])=>
     '<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
-  if(profile.role==="admin"){setCurrentSection("students");view("students");refreshMessageBadge();}
+  mlApplyMenuOrder();if(profile.role==="admin"){setCurrentSection("students");view("students");refreshMessageBadge();}
   else if(hasTenant&&profile.role==="teacher"){
     setCurrentSection("tenantHome");await mlTenantRouter("tenantHome");
   }
