@@ -196,7 +196,7 @@ function mlUpdateMenuLanguage(){
  if(menuLabel)menuLabel.textContent=en?"Menu":"Μενού";
  if($("dashboard")&&!$("dashboard").classList.contains("hide")){
    const heading=$("dashboard").querySelector("h1");
-   if(heading)heading.textContent=en?"Welcome to the modern MathLab learning center":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab";
+   if(heading)heading.textContent=profile?.role==="admin"?(en?"Welcome to your own modern MathLab learning center":"Καλώς ήρθες στο δικό σου σύγχρονο φροντιστήριο MathLab"):(en?"Welcome to the modern MathLab learning center":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab");
  }
 }
 function mlApplyLanguage(){
@@ -2509,7 +2509,7 @@ async function view(table){if(table==="settings")return mlSettingsView();if(tabl
   profile=result.data;
   screen("dashboard");
   $("nav").classList.remove("open");$("menuBackdrop").classList.add("hide");document.body.classList.remove("menuOpen");$("menuToggle").setAttribute("aria-expanded","false");
-  $("dashboard").querySelector("h1").textContent="Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab";
+  $("dashboard").querySelector("h1").textContent=profile.role==="admin"?"Καλώς ήρθες στο δικό σου σύγχρονο φροντιστήριο MathLab":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab";
   $("profile").textContent=profile.full_name||user.email||"Χρήστης";
   $("nav").innerHTML=(profile.role==="admin"?Object.entries(tabs):profile.role==="student"?[["studentCalendar",["Ημερολόγιο",[]]],["studentMessages",["Μηνύματα",[]]],["studentGrades",["Οι βαθμοί μου",[]]],["studentLessons",["Τα μαθήματά μου",[]]],["settings",["Ρυθμίσεις",[]]]]:[]).map(([id,item])=>'<button type="button" class="alt" data-tab="'+id+'">'+item[0]+'</button>').join("");
   if(profile.role==="admin"){setCurrentSection("students");view("students");refreshMessageBadge();}
