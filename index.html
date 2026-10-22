@@ -314,6 +314,70 @@ const learningMaxFileSize=50*1024*1024;
 const learningAllowedExts=new Set(["pdf","png","jpg","jpeg","webp","gif","mp4","webm","mov","doc","docx","ppt","pptx","xls","xlsx","txt","csv","odt","odp","ods"]);
 const learningExt=name=>String(name||"").split(".").pop().toLowerCase();
 function learningFriendlyBytes(size){return size>=1048576?(size/1048576).toFixed(1)+" MB":(size/1024).toFixed(1)+" KB"}
+
+async function learningPrepareCameraPhoto(file){
+ if(!file||!String(file.type||"").startsWith("image/"))throw Error("Η κάμερα δεν επέστρεψε φωτογραφία.");
+ if(file.size===0)throw Error("Η φωτογραφία είναι κενή. Δοκίμασε ξανά.");
+ const ext=learningExt(file.name);
+ if(["jpg","jpeg","png","webp","gif"].includes(ext)&&file.size<=learningMaxFileSize)return file;
+ const mapped={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"};
+ if(mapped[file.type]&&file.size<=learningMaxFileSize){
+   return new File([file],"Φωτογραφία_"+Date.now()+"."+mapped[file.type],{type:file.type,lastModified:Date.now()});
+ }
+ // Convert a large picture or a HEIC/HEIF picture when the mobile browser supports decoding it.
+ const url=URL.createObjectURL(file);
+ try{
+   const image=new Image();
+   image.src=url;
+   await image.decode();
+   const width=image.naturalWidth,height=image.naturalHeight;
+   if(!width||!height)throw Error("Η φωτογραφία δεν διαβάζεται.");
+   const scale=Math.min(1,2400/Math.max(width,height));
+   const canvas=document.createElement("canvas");
+   canvas.width=Math.max(1,Math.round(width*scale));
+   canvas.height=Math.max(1,Math.round(height*scale));
+   const ctx=canvas.getContext("2d");
+   if(!ctx)throw Error("Δεν μπορεί να μετατραπεί η φωτογραφία.");
+   ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
+   ctx.drawImage(image,0,0,canvas.width,canvas.height);
+   const blob=await new Promise((resolve,reject)=>{
+     canvas.toBlob(b=>b?resolve(b):reject(Error("Απέτυχε η μετατροπή φωτογραφίας.")),"image/jpeg",0.88);
+   });
+   if(blob.size>learningMaxFileSize)throw Error("Η φωτογραφία είναι πολύ μεγάλη.");
+   return new File([blob],"Φωτογραφία_"+Date.now()+".jpg",{type:"image/jpeg",lastModified:Date.now()});
+ }catch(error){
+   throw Error("Δεν υποστηρίζεται αυτή η μορφή φωτογραφίας στο κινητό. Δοκίμασε JPEG/JPG ή άνοιξε τη φωτογραφία από τη Συλλογή. "+(error?.message||""));
+ }finally{URL.revokeObjectURL(url)}
+}
+function learningCreateImageZoom(preview,img){
+ const controls=document.createElement("div");controls.className="learningInline learningZoomControls";
+ const less=document.createElement("button"),more=document.createElement("button"),reset=document.createElement("button");
+ const label=document.createElement("span");label.className="learningHint";label.setAttribute("aria-live","polite");
+ less.type="button";more.type="button";reset.type="button";
+ less.className="alt";more.className="alt";reset.className="alt";
+ less.textContent="−";more.textContent="+";reset.textContent="Επαναφορά";
+ less.setAttribute("aria-label","Σμίκρυνση φωτογραφίας");
+ more.setAttribute("aria-label","Μεγέθυνση φωτογραφίας");
+ reset.setAttribute("aria-label","Αρχική μεγέθυνση φωτογραφίας");
+ controls.append(learningTextElement("strong","Ζουμ"),less,label,more,reset);
+ const stage=document.createElement("div");stage.className="learningZoomStage";
+ img.classList.add("learningZoomImage");
+ stage.append(img);preview.append(controls,stage);
+ let scale=1;
+ function refresh(){
+   const base=Math.min(img.naturalWidth||stage.clientWidth,Math.max(stage.clientWidth,180));
+   img.style.width=Math.round(base*scale)+"px";
+   img.style.maxWidth="none";
+   label.textContent=Math.round(scale*100)+"%";
+   less.disabled=scale<=0.5;more.disabled=scale>=3;
+ }
+ less.onclick=()=>{scale=Math.max(.5,Math.round((scale-.25)*100)/100);refresh()};
+ more.onclick=()=>{scale=Math.min(3,Math.round((scale+.25)*100)/100);refresh()};
+ reset.onclick=()=>{scale=1;refresh()};
+ if(img.complete&&img.naturalWidth)refresh();else img.addEventListener("load",refresh,{once:true});
+ return {refresh};
+}
+
 async function learningAdminView(){
  if(profile?.role!=="admin")return;
  $("view").innerHTML='<div class="card"><h2>Εκπαιδευτικό υλικό</h2>'+
