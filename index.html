@@ -1707,50 +1707,56 @@ async function studentLessonsView(user){
  }catch(err){learningStatusText(status,"Δεν φορτώθηκαν τα μαθήματα: "+(err?.message||String(err)))}
 }
 
+
 async function studentUploadDocumentPanel(studentId,unit,mount){
  if(profile?.role!=="student"||!mount.isConnected)return;
  const section=document.createElement("section");section.className="learningCard";
- section.append(learningTextElement("h3","Ανέβασμα δικού μου εγγράφου"));
- section.append(learningTextElement("p","Στείλε δικό σου PDF, φωτογραφία, Word, PowerPoint ή άλλο αρχείο στην κυρία Φωτεινή για έλεγχο. Μέχρι 50 MB ανά αρχείο.","learningHint"));
+ section.append(learningTextElement("h3","Αποστολή εργασίας στην κυρία Φωτεινή"));
+ section.append(learningTextElement("p","Φωτογράφισε μια άσκηση και θα αποσταλεί αυτόματα μόλις επιβεβαιώσεις τη λήψη στην κάμερα. Μπορείς επίσης να διαλέξεις έγγραφο από το κινητό (έως 50 MB).","learningHint"));
  const fileInput=document.createElement("input");
- fileInput.type="file";fileInput.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov";
+ fileInput.type="file";fileInput.accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.odt,.odp,.ods,.mp4,.webm,.mov,image/*";
  fileInput.className="learningFileHidden";
  fileInput.setAttribute("aria-label","Επιλογή εγγράφου από το κινητό");
  const choose=document.createElement("button");choose.type="button";choose.className="alt";
  choose.textContent="📎 Επιλογή αρχείου από το κινητό";
  choose.onclick=()=>fileInput.click();
-
  const cameraInput=document.createElement("input");
  cameraInput.type="file";cameraInput.accept="image/*";cameraInput.setAttribute("capture","environment");
- cameraInput.className="learningCameraInput";cameraInput.setAttribute("aria-label","Φωτογράφιση εργασίας");
- const cameraLabel=document.createElement("label");cameraLabel.className="learningCameraLabel";
- cameraLabel.textContent="📷 Λήψη φωτογραφίας";
+ cameraInput.className="learningCameraInput";
+ cameraInput.setAttribute("aria-label","Λήψη και άμεση αποστολή φωτογραφίας");
+ const cameraLabel=document.createElement("label");
+ cameraLabel.className="learningCameraLabel";cameraLabel.textContent="📷 Φωτογράφιση & άμεση αποστολή";
  cameraLabel.append(cameraInput);
  const chosen=learningTextElement("p","Δεν έχει επιλεγεί αρχείο.","learningHint");
- let pendingPhoto=null;
- fileInput.onchange=()=>{
-   pendingPhoto=null;
-   const file=pendingPhoto||fileInput.files?.[0];
-   chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο.";
- };
- cameraInput.onchange=async()=>{
-   const file=cameraInput.files?.[0];if(!file)return;
-   chosen.textContent="Προετοιμασία φωτογραφίας...";
-   try{
-     pendingPhoto=await learningPrepareCameraPhoto(file);
-     fileInput.value="";
-     chosen.textContent="📷 "+pendingPhoto.name+" — "+learningFriendlyBytes(pendingPhoto.size);
-   }catch(error){pendingPhoto=null;chosen.textContent="Δεν διαβάστηκε η φωτογραφία: "+(error?.message||String(error))}
-   finally{cameraInput.value=""}
- };
- const comment=document.createElement("textarea");comment.className="chatTextarea";comment.maxLength=3000;
- comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή…";
- const submit=document.createElement("button");submit.type="button";submit.textContent="Αποστολή εγγράφου";
- const status=learningTextElement("p","","learningHint");status.setAttribute("role","status");
+ const comment=document.createElement("textarea");
+ comment.className="chatTextarea";comment.maxLength=3000;
+ comment.placeholder="Προαιρετικό σχόλιο στην κυρία Φωτεινή (για την επόμενη φωτογραφία)...";
+ const submit=document.createElement("button");
+ submit.type="button";submit.textContent="Αποστολή επιλεγμένου αρχείου";
+ const retry=document.createElement("button");
+ retry.type="button";retry.className="alt hide";retry.textContent="↻ Επανάληψη αποστολής";
+ const status=learningTextElement("p","","learningHint");
+ status.setAttribute("role","status");status.setAttribute("aria-live","polite");
  const list=document.createElement("div");
- section.append(fileInput,choose,cameraLabel,chosen,learningTextElement("label","Μήνυμα για το έγγραφο"),comment,submit,status,
+ section.append(fileInput,choose,cameraLabel,chosen,
+   learningTextElement("label","Μήνυμα για την εργασία"),comment,submit,retry,status,
    learningTextElement("h4","Τα αρχεία που έχω στείλει"),list);
  mount.append(section);
+
+ let sending=false,pendingRetry=null;
+ function busy(value){
+   sending=value;
+   submit.disabled=value;choose.disabled=value;cameraInput.disabled=value;fileInput.disabled=value;
+   cameraLabel.style.opacity=value?"0.5":"1";
+   if(value)retry.classList.add("hide");
+ }
+ fileInput.onchange=()=>{
+   if(sending)return;
+   pendingRetry=null;retry.classList.add("hide");
+   const file=fileInput.files?.[0];
+   chosen.textContent=file?file.name+" — "+learningFriendlyBytes(file.size):"Δεν έχει επιλεγεί αρχείο.";
+   status.textContent=file?"Πάτησε «Αποστολή επιλεγμένου αρχείου».":"";
+ };
  async function listMyUploads(){
    const [sent,reviewed]=await Promise.all([
      supabase.from("mathlab_learning_student_uploads")
@@ -1759,11 +1765,15 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
      supabase.from("mathlab_learning_upload_reviews")
        .select("upload_id,score,max_score,feedback")
    ]);
-   if(sent.error)throw sent.error;if(reviewed.error)throw reviewed.error;
+   if(sent.error)throw sent.error;
+   if(reviewed.error)throw reviewed.error;
    if(!list.isConnected)return;
    list.replaceChildren();
    const reviews=new Map((reviewed.data||[]).map(r=>[r.upload_id,r]));
-   if(!sent.data?.length){list.append(learningTextElement("p","Δεν έχεις στείλει ακόμα κάποιο έγγραφο.","muted"));return}
+   if(!sent.data?.length){
+     list.append(learningTextElement("p","Δεν έχεις στείλει ακόμα κάποιο έγγραφο.","muted"));
+     return;
+   }
    for(const file of sent.data||[]){
      const box=document.createElement("div");box.className="learningCard";
      box.append(learningTextElement("strong","📎 "+file.original_name));
@@ -1774,16 +1784,21 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
      list.append(box);
    }
  }
- submit.onclick=async()=>{
-   const file=fileInput.files?.[0];
-   if(!file){status.textContent="Επίλεξε πρώτα ένα αρχείο.";return}
-   if(file.size>learningMaxFileSize||file.size===0||!learningAllowedExts.has(learningExt(file.name))){
-     status.textContent="Επίλεξε υποστηριζόμενο αρχείο έως 50 MB.";return;
-   }
-   submit.disabled=true;choose.disabled=true;cameraInput.disabled=true;
-   let uploadedPath=null,metadataSaved=false;
+ async function sendDocument(original,fromCamera=false){
+   if(sending||!original)return false;
+   busy(true);
+   let file=original,uploadedPath=null,metadataSaved=false;
+   const message=comment.value.trim();
    try{
-     status.textContent="Ανεβαίνει το αρχείο: "+file.name;
+     if(String(file.type||"").startsWith("image/") || ["heic","heif"].includes(learningExt(file.name))){
+       status.textContent="Προετοιμασία φωτογραφίας...";
+       file=await learningPrepareCameraPhoto(file);
+     }
+     if(!file.size||file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name))){
+       throw Error("Επίλεξε αρχείο έως 50 MB σε υποστηριζόμενη μορφή.");
+     }
+     chosen.textContent=(fromCamera?"📷 ":"📎 ")+file.name+" — "+learningFriendlyBytes(file.size);
+     status.textContent="Αποστολή στην κυρία Φωτεινή... Μην κλείσεις ακόμη την εφαρμογή.";
      const path="student-uploads/"+studentId+"/"+unit.id+"/"+crypto.randomUUID()+"."+learningExt(file.name);
      const stored=await supabase.storage.from(learningBucket).upload(path,file,{
        upsert:false,contentType:file.type||"application/octet-stream",cacheControl:"0"
@@ -1792,23 +1807,49 @@ async function studentUploadDocumentPanel(studentId,unit,mount){
      uploadedPath=path;
      const saved=await supabase.from("mathlab_learning_student_uploads").insert({
        student_id:studentId,unit_id:unit.id,storage_path:path,original_name:file.name,
-       mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:comment.value.trim()
+       mime_type:file.type||"application/octet-stream",size_bytes:file.size,comment:message
      }).select("id").single();
      if(saved.error)throw saved.error;
-     metadataSaved=true;fileInput.value="";cameraInput.value="";pendingPhoto=null;comment.value="";chosen.textContent="Δεν έχει επιλεγεί αρχείο.";
-     status.textContent="✓ Το έγγραφο στάλθηκε και εμφανίζεται στις «Εργασίες» της κυρίας Φωτεινής.";
-     await listMyUploads();
-   }catch(error){status.textContent="Το έγγραφο δεν στάλθηκε: "+(error?.message||String(error))}
-   finally{
+     metadataSaved=true;
+     pendingRetry=null;
+     fileInput.value="";cameraInput.value="";comment.value="";
+     chosen.textContent="Το αρχείο αποστάλθηκε: "+file.name;
+     status.textContent="✓ Η φωτογραφία ή το αρχείο στάλθηκε! Θα εμφανιστεί στις «Εργασίες» της κυρίας Φωτεινής.";
+     // Keep successful submission even if the history refresh has a transient error.
+     try{await listMyUploads()}
+     catch(error){status.textContent+=" (Η λίστα δεν ανανεώθηκε: "+(error?.message||String(error))+")"}
+     return true;
+   }catch(error){
+     pendingRetry=file;
+     retry.classList.remove("hide");
+     status.textContent="✗ Η αποστολή απέτυχε. "+(error?.message||String(error))+". Πάτησε «Επανάληψη αποστολής», χωρίς να ξαναβγάλεις φωτογραφία.";
+     return false;
+   }finally{
      if(uploadedPath&&!metadataSaved){
-       await supabase.storage.from(learningBucket).remove([uploadedPath]);
+       try{await supabase.storage.from(learningBucket).remove([uploadedPath])}catch(_){}
      }
-     if(submit.isConnected){submit.disabled=false;choose.disabled=false;cameraInput.disabled=false}
+     busy(false);
+     if(pendingRetry)retry.classList.remove("hide");
    }
+ }
+ cameraInput.onchange=async()=>{
+   const photo=cameraInput.files?.[0];
+   if(!photo||sending)return;
+   // Taking and accepting the photograph is the only user confirmation required.
+   // Retain the File in memory, because browsers often clear the camera input.
+   const captured=photo;
+   cameraInput.value="";
+   await sendDocument(captured,true);
  };
- try{await listMyUploads()}catch(error){status.textContent="Δεν φορτώθηκαν τα απεσταλμένα αρχεία: "+(error?.message||String(error))}
+ submit.onclick=async()=>{
+   const file=fileInput.files?.[0];
+   if(!file){status.textContent="Επίλεξε αρχείο από τη συσκευή, ή πάτησε το κουμπί της κάμερας για αυτόματη αποστολή.";return}
+   await sendDocument(file,false);
+ };
+ retry.onclick=async()=>{if(pendingRetry)await sendDocument(pendingRetry,true)};
+ try{await listMyUploads()}
+ catch(error){status.textContent="Δεν φορτώθηκαν τα απεσταλμένα αρχεία: "+(error?.message||String(error))}
 }
-
 async function studentLearningUnitView(user,studentId,unit){
  if(profile?.role!=="student")return;
  $("view").innerHTML='<div class="card"><button type="button" class="alt" id="learningBack">← Τα μαθήματά μου</button><h2 id="learningUnitTitle"></h2><p id="learningUnitInfo"></p><p id="learningUnitStatus" role="status">Φόρτωση...</p><div id="learningUnitFiles"></div><div id="learningUnitExercises"></div></div>';
