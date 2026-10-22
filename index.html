@@ -3126,6 +3126,460 @@ async function mlNotificationsView(){
  mlApplyLanguage();
 }
 
+
+const mlTenantBucket="mathlab-tenant-private";
+function mlTenantCardHeading(text){return learningTextElement("h3",text)}
+async function mlTenantLookup(user){
+ mlTenantSchoolId=null;mlTenantRole=null;mlTenantSchoolName="";
+ const membership=await supabase.from("mathlab_school_members")
+  .select("school_id,role,active").eq("user_id",user.id).eq("active",true);
+ if(membership.error)throw membership.error;
+ const candidates=(membership.data||[]).filter(x=>
+  profile?.role==="teacher"?x.role==="owner"||x.role==="teacher":x.role==="student");
+ if(!candidates.length)return false;
+ const schools=await supabase.from("mathlab_schools")
+  .select("id,display_name,legacy,active").in("id",candidates.map(x=>x.school_id))
+  .eq("active",true);
+ if(schools.error)throw schools.error;
+ const school=(schools.data||[]).find(x=>!x.legacy);
+ if(!school)return false;
+ mlTenantSchoolId=school.id;mlTenantSchoolName=school.display_name;
+ mlTenantRole=candidates.find(m=>m.school_id===school.id)?.role||null;
+ return Boolean(mlTenantSchoolId);
+}
+async function mlTenantCounts(){
+ const id=mlTenantSchoolId;
+ const [a,b,c]=await Promise.all([
+  supabase.from("mathlab_school_students").select("id",{count:"exact",head:true}).eq("school_id",id),
+  supabase.from("mathlab_school_lessons").select("id",{count:"exact",head:true}).eq("school_id",id),
+  supabase.from("mathlab_school_submissions").select("id",{count:"exact",head:true}).eq("school_id",id)
+ ]);
+ for(const res of [a,b,c])if(res.error)throw res.error;
+ return [a.count||0,b.count||0,c.count||0];
+}
+async function mlTenantHomeView(){
+ const root=$("view");root.replaceChildren();
+ const card=document.createElement("div");card.className="card";
+ card.append(mlTenantCardHeading("🏫 "+mlTenantSchoolName));
+ card.append(learningTextElement("p","Αυτός είναι ο δικός σου ανεξάρτητος χώρος. Τα δεδομένα του δεν αναμειγνύονται με κανενός άλλου καθηγητή.","learningHint"));
+ const tiles=document.createElement("div");tiles.className="grid";
+ const status=learningTextElement("p","Φόρτωση...","learningHint");
+ card.append(tiles,status);root.append(card);
+ try{
+   const counts=await mlTenantCounts();
+   const values=[["Μαθητές",counts[0],"tenantStudents"],["Μαθήματα",counts[1],"tenantLessons"],["Παραδομένες εργασίες",counts[2],"tenantAssignments"]];
+   for(const [label,count,target] of values){
+     const box=document.createElement("button");box.type="button";box.className="tile alt";box.style.textAlign="left";
+     const strong=learningTextElement("strong",label),value=learningTextElement("p",String(count));
+     box.append(strong,value);box.onclick=()=>{setCurrentSection(target);mlTenantRouter(target)};tiles.append(box);
+   }
+   status.textContent="Μπορείς να προσθέσεις μαθητές, να τους στείλεις προσωπικές προσκλήσεις και να δημιουργήσεις μαθήματα.";
+ }catch(e){status.textContent="Δεν φορτώθηκε η σύνοψη: "+(e?.message||String(e))}
+}
+async function mlTenantStudentsView(){
+ const root=$("view");
+ root.innerHTML='<div class="card"><h2>Οι μαθητές του φροντιστηρίου μου</h2>'+
+  '<p class="learningHint">Πρόσθεσε τον μαθητή και δημιούργησε έναν προσωπικό σύνδεσμο πρόσκλησης. Ο σύνδεσμος λήγει σε 7 ημέρες.</p>'+
+  '<form id="mlTenantStudentForm">'+
+  '<label>Ονοματεπώνυμο μαθητή<input name="name" minlength="2" maxlength="150" required></label>'+
+  '<label>Τάξη<input name="grade" maxlength="80" placeholder="π.χ. Β΄ Λυκείου"></label>'+
+  '<label>Email (προαιρετικό)<input name="email" type="email" maxlength="254"></label>'+
+  '<button type="submit">Προσθήκη μαθητή</button></form>'+
+  '<p id="mlTenantStudentsStatus" role="status"></p></div>'+
+  '<div class="card"><h3>Μαθητές και προσκλήσεις</h3><button class="alt" id="mlTenantStudentsRefresh">Ανανέωση</button><div id="mlTenantStudentsList"></div></div>';
+ const form=$("mlTenantStudentForm"),status=$("mlTenantStudentsStatus"),list=$("mlTenantStudentsList");
+ async function refresh(){
+   const res=await supabase.from("mathlab_school_students")
+    .select("id,full_name,grade,contact_email,user_id,active,created_at")
+    .eq("school_id",mlTenantSchoolId).order("created_at",{ascending:false});
+   if(res.error)throw res.error;
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   if(!res.data?.length)list.append(learningTextElement("p","Δεν έχουν προστεθεί μαθητές."));
+   for(const student of res.data||[]){
+     const panel=document.createElement("section");panel.className="learningCard";
+     panel.append(learningTextElement("strong",student.full_name));
+     panel.append(learningTextElement("p",student.grade||"Δεν έχει οριστεί τάξη","learningHint"));
+     panel.append(learningTextElement("p",student.user_id?"✓ Συνδεδεμένος λογαριασμός":"Αναμένει πρόσκληση","learningHint"));
+     const invite=document.createElement("button");invite.type="button";invite.className="alt";
+     invite.textContent="🔗 Δημιουργία πρόσκλησης μαθητή";invite.disabled=!!student.user_id||!student.active;
+     const share=document.createElement("div");
+     invite.onclick=async()=>{
+       invite.disabled=true;share.textContent="Δημιουργία ασφαλούς πρόσκλησης...";
+       try{
+         const res=await supabase.rpc("create_mathlab_school_student_invite",{
+           p_school_id:mlTenantSchoolId,p_student_id:student.id
+         });
+         if(res.error)throw res.error;
+         const url=location.origin+location.pathname+"?school_invite="+encodeURIComponent(res.data);
+         share.replaceChildren();
+         const input=document.createElement("textarea");input.className="chatTextarea";
+         input.readOnly=true;input.rows=3;input.value=url;
+         const copy=document.createElement("button");copy.type="button";copy.className="alt";copy.textContent="Αντιγραφή συνδέσμου";
+         copy.onclick=async()=>{
+           try{
+             await navigator.clipboard.writeText(url);
+             copy.textContent="✓ Αντιγράφηκε";
+           }catch(_){
+             input.focus();input.select();
+             copy.textContent="Επίλεξε τον σύνδεσμο και αντέγραψέ τον";
+           }
+         };
+         share.append(learningTextElement("p","Στείλε αυτόν τον προσωπικό σύνδεσμο μόνο στον συγκεκριμένο μαθητή.","learningHint"),input,copy);
+       }catch(e){share.textContent="Δεν δημιουργήθηκε πρόσκληση: "+(e?.message||String(e))}
+       finally{invite.disabled=!!student.user_id}
+     };
+     panel.append(invite,share);list.append(panel);
+   }
+ }
+ form.onsubmit=async e=>{
+   e.preventDefault();const button=form.querySelector("button[type=submit]");if(button.disabled)return;
+   const data=new FormData(form),name=String(data.get("name")||"").trim(),
+     grade=String(data.get("grade")||"").trim(),email=String(data.get("email")||"").trim().toLowerCase();
+   if(name.length<2){status.textContent="Χρειάζεται όνομα μαθητή.";return}
+   button.disabled=true;status.textContent="Αποθήκευση μαθητή...";
+   try{
+     const result=await supabase.from("mathlab_school_students").insert({
+       school_id:mlTenantSchoolId,full_name:name,grade,contact_email:email||null
+     }).select("id").single();
+     if(result.error)throw result.error;
+     form.reset();status.textContent="✓ Ο μαθητής προστέθηκε. Τώρα μπορείς να δημιουργήσεις πρόσκληση.";
+     await refresh();
+   }catch(e){status.textContent="Δεν προστέθηκε ο μαθητής: "+(e?.message||String(e))}
+   finally{button.disabled=false}
+ };
+ $("mlTenantStudentsRefresh").onclick=()=>refresh().catch(e=>status.textContent=e.message);
+ try{await refresh()}catch(e){status.textContent="Δεν φορτώθηκαν οι μαθητές: "+(e?.message||String(e))}
+}
+async function mlTenantLessonsView(){
+ const root=$("view");
+ root.innerHTML='<div class="card"><h2>Μαθήματα του φροντιστηρίου μου</h2>'+
+ '<p class="learningHint">Οργάνωσε το υλικό για τους δικούς σου μαθητές. Ένα μάθημα δημοσιεύεται όταν επιλέξεις μαθητές. Τα αρχεία είναι ιδιωτικά.</p>'+
+ '<form id="mlSchoolNewLesson">'+
+ '<label>Τίτλος<input name="title" minlength="2" maxlength="180" required placeholder="π.χ. Εξισώσεις"></label>'+
+ '<label>Θεωρία / άσκηση<textarea name="description" class="chatTextarea" maxlength="12000" rows="5" placeholder="Γράψε εδώ την εκφώνηση και τις οδηγίες..."></textarea></label>'+
+ '<label>Προθεσμία (προαιρετική)<input name="due" type="date"></label>'+
+ '<label>PDF, εικόνες, Word και άλλα αρχεία (έως 50 MB το καθένα)<input name="files" type="file" id="mlTenantFiles" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.txt,.csv,.mp4,.webm"></label>'+
+ '<h3>Ανάθεση σε μαθητές</h3><div id="mlTenantLessonStudents"></div>'+
+ '<button id="mlTenantCreateLesson" type="submit">Δημιουργία και ανάθεση</button></form><p id="mlTenantLessonStatus" role="status"></p></div>'+
+ '<div class="card"><h3>Τα μαθήματά μου</h3><div id="mlTenantLessonList"></div></div>';
+ const form=$("mlSchoolNewLesson"),status=$("mlTenantLessonStatus"),
+   picker=$("mlTenantLessonStudents"),list=$("mlTenantLessonList");
+ let roster=[];
+ async function loadRoster(){
+   const res=await supabase.from("mathlab_school_students").select("id,full_name,user_id,active")
+    .eq("school_id",mlTenantSchoolId).eq("active",true).order("full_name");
+   if(res.error)throw res.error;
+   roster=res.data||[];picker.replaceChildren();
+   if(!roster.length)picker.append(learningTextElement("p","Πρόσθεσε πρώτα έναν μαθητή από το μενού «Μαθητές».","learningHint"));
+   for(const student of roster){
+     const label=document.createElement("label"),input=document.createElement("input");
+     input.type="checkbox";input.value=student.id;input.style.width="auto";
+     label.append(input,document.createTextNode(student.full_name+(student.user_id?"":" — αναμένει ενεργοποίηση")));
+     picker.append(label);
+   }
+ }
+ async function listLessons(){
+   const result=await supabase.from("mathlab_school_lessons")
+     .select("id,title,description,published,created_at")
+     .eq("school_id",mlTenantSchoolId).order("created_at",{ascending:false}).limit(100);
+   if(result.error)throw result.error;
+   if(!list.isConnected)return;
+   list.replaceChildren();
+   if(!result.data?.length)list.append(learningTextElement("p","Δεν έχουν δημιουργηθεί μαθήματα."));
+   for(const lesson of result.data||[]){
+     const card=document.createElement("section");card.className="learningCard";
+     card.append(learningTextElement("h3",lesson.title));
+     if(lesson.description)card.append(learningTextElement("p",lesson.description));
+     card.append(learningTextElement("p",lesson.published?"✓ Δημοσιευμένο":"Πρόχειρο (δεν είναι διαθέσιμο στους μαθητές)","learningHint"));
+     const assign=document.createElement("button");assign.type="button";assign.className="alt";
+     assign.textContent="Ανάθεση σε επιπλέον μαθητές";
+     const options=document.createElement("div");
+     assign.onclick=async()=>{
+       assign.disabled=true;options.textContent="Φόρτωση...";
+       try{
+         const result=await supabase.from("mathlab_school_assignments")
+            .select("student_id").eq("school_id",mlTenantSchoolId).eq("lesson_id",lesson.id);
+         if(result.error)throw result.error;
+         const assigned=new Set((result.data||[]).map(x=>x.student_id));
+         options.replaceChildren();
+         const targets=document.createElement("div");options.append(targets);
+         for(const student of roster.filter(x=>!assigned.has(x.id))){
+           const label=document.createElement("label");const cb=document.createElement("input");
+           cb.type="checkbox";cb.value=student.id;cb.style.width="auto";
+           label.append(cb,document.createTextNode(student.full_name));targets.append(label);
+         }
+         if(!targets.childNodes.length)targets.append(learningTextElement("p","Το μάθημα έχει ανατεθεί σε όλους τους καταχωρισμένους μαθητές."));
+         else{
+           const add=document.createElement("button");add.type="button";add.textContent="Ανάθεση";
+           add.onclick=async()=>{
+             const ids=Array.from(targets.querySelectorAll("input:checked")).map(x=>x.value);
+             if(!ids.length)return;
+             add.disabled=true;
+             try{
+               const inserted=await supabase.from("mathlab_school_assignments").insert(
+                 ids.map(student_id=>({school_id:mlTenantSchoolId,lesson_id:lesson.id,student_id}))
+               );
+               if(inserted.error)throw inserted.error;
+               const pub=await supabase.from("mathlab_school_lessons").update({published:true})
+                 .eq("id",lesson.id).eq("school_id",mlTenantSchoolId);
+               if(pub.error)throw pub.error;
+               status.textContent="✓ Η εργασία ανατέθηκε στους επιλεγμένους μαθητές.";
+               await listLessons();
+             }catch(e){status.textContent="Δεν ανατέθηκε: "+(e?.message||String(e))}
+             finally{add.disabled=false}
+           };
+           options.append(add);
+         }
+       }catch(e){options.textContent="Δεν φορτώθηκε η ανάθεση: "+e.message}
+       finally{assign.disabled=false}
+     };
+     card.append(assign,options);list.append(card);
+   }
+ }
+ form.onsubmit=async event=>{
+   event.preventDefault();
+   const button=$("mlTenantCreateLesson");if(button.disabled)return;
+   const data=new FormData(form),title=String(data.get("title")||"").trim(),
+     description=String(data.get("description")||"").trim(),due=String(data.get("due")||"");
+   const selected=Array.from(picker.querySelectorAll("input:checked")).map(x=>x.value);
+   const files=Array.from($("mlTenantFiles").files||[]);
+   if(title.length<2){status.textContent="Συμπλήρωσε τίτλο.";return}
+   const bad=files.find(file=>file.size>learningMaxFileSize||!learningAllowedExts.has(learningExt(file.name)));
+   if(bad){status.textContent="Το αρχείο "+bad.name+" δεν υποστηρίζεται ή ξεπερνά τα 50 MB.";return}
+   button.disabled=true;let lessonId=null,complete=false;const uploaded=[];
+   try{
+     const auth=await supabase.auth.getUser();if(auth.error)throw auth.error;
+     if(!auth.data.user)throw Error("Η σύνδεση έληξε.");
+     const result=await supabase.from("mathlab_school_lessons").insert({
+       school_id:mlTenantSchoolId,title,description,published:false,created_by:auth.data.user.id
+     }).select("id").single();
+     if(result.error)throw result.error;lessonId=result.data.id;
+     if(selected.length){
+       const assigned=await supabase.from("mathlab_school_assignments").insert(
+         selected.map(student_id=>({school_id:mlTenantSchoolId,student_id,lesson_id:lessonId,due_date:due||null}))
+       );
+       if(assigned.error)throw assigned.error;
+     }
+     for(const [i,file] of files.entries()){
+       status.textContent="Ανέβασμα αρχείου "+(i+1)+"/"+files.length+"...";
+       const path="schools/"+mlTenantSchoolId+"/materials/"+crypto.randomUUID()+"."+learningExt(file.name);
+       const storage=await supabase.storage.from(mlTenantBucket).upload(path,file,{
+         contentType:file.type||"application/octet-stream",upsert:false
+       });
+       if(storage.error)throw storage.error;
+       uploaded.push(path);
+       const meta=await supabase.from("mathlab_school_files").insert({
+         school_id:mlTenantSchoolId,lesson_id:lessonId,storage_path:path,
+         original_name:file.name,mime_type:file.type||"application/octet-stream",
+         size_bytes:file.size,created_by:auth.data.user.id
+       });
+       if(meta.error)throw meta.error;
+     }
+     if(selected.length){
+       const published=await supabase.from("mathlab_school_lessons").update({published:true})
+         .eq("id",lessonId).eq("school_id",mlTenantSchoolId);
+       if(published.error)throw published.error;
+     }
+     complete=true;form.reset();await listLessons();
+     status.textContent=selected.length?"✓ Το μάθημα δημιουργήθηκε και ανατέθηκε στους μαθητές.":"✓ Το μάθημα αποθηκεύτηκε ως πρόχειρο. Ανάθεσέ το σε μαθητές όταν είσαι έτοιμος.";
+   }catch(e){status.textContent="Δεν δημιουργήθηκε το μάθημα: "+(e?.message||String(e))}
+   finally{
+     if(!complete&&lessonId){
+       if(uploaded.length)await supabase.storage.from(mlTenantBucket).remove(uploaded);
+       await supabase.from("mathlab_school_lessons").delete().eq("id",lessonId).eq("school_id",mlTenantSchoolId);
+     }
+     button.disabled=false;
+   }
+ };
+ try{await Promise.all([loadRoster(),listLessons()])}catch(e){status.textContent="Δεν φορτώθηκαν τα μαθήματα: "+(e?.message||String(e))}
+}
+async function mlTenantAssignmentsView(){
+ const root=$("view");
+ root.innerHTML='<div class="card"><h2>Εργασίες και βαθμολογίες</h2><p class="learningHint">Βλέπεις αποκλειστικά τις εργασίες των μαθητών του δικού σου φροντιστηρίου.</p>'+
+ '<button type="button" id="mlTenantRefreshAssignments" class="alt">Ανανέωση</button>'+
+ '<p id="mlTenantWorkStatus" role="status">Φόρτωση...</p><div id="mlTenantWorkList"></div></div>';
+ const status=$("mlTenantWorkStatus"),list=$("mlTenantWorkList");
+ async function refresh(){
+   const [assignments,students,lessons,submissions]=await Promise.all([
+     supabase.from("mathlab_school_assignments").select("id,lesson_id,student_id,due_date").eq("school_id",mlTenantSchoolId),
+     supabase.from("mathlab_school_students").select("id,full_name").eq("school_id",mlTenantSchoolId),
+     supabase.from("mathlab_school_lessons").select("id,title").eq("school_id",mlTenantSchoolId),
+     supabase.from("mathlab_school_submissions").select("id,assignment_id,answer_text,score,max_score,feedback,submitted_at")
+       .eq("school_id",mlTenantSchoolId).order("submitted_at",{ascending:false})
+   ]);
+   for(const res of [assignments,students,lessons,submissions])if(res.error)throw res.error;
+   if(!list.isConnected)return;list.replaceChildren();
+   const names=new Map((students.data||[]).map(s=>[s.id,s.full_name]));
+   const titles=new Map((lessons.data||[]).map(s=>[s.id,s.title]));
+   const answers=new Map((submissions.data||[]).map(s=>[s.assignment_id,s]));
+   if(!assignments.data?.length)list.append(learningTextElement("p","Δεν υπάρχουν ακόμη ανατεθειμένες εργασίες."));
+   status.textContent=(submissions.data||[]).length+" παραδομένες εργασίες.";
+   for(const assignment of assignments.data||[]){
+     const answer=answers.get(assignment.id),card=document.createElement("section");card.className="learningCard";
+     card.append(learningTextElement("h3",(names.get(assignment.student_id)||"Μαθητής")+" — "+(titles.get(assignment.lesson_id)||"Μάθημα")));
+     card.append(learningTextElement("p",answer?"✓ Παραδόθηκε":"Αναμονή υποβολής","learningHint"));
+     if(assignment.due_date)card.append(learningTextElement("p","Προθεσμία: "+assignment.due_date,"learningHint"));
+     if(answer){
+       const view=document.createElement("button");view.type="button";view.className="alt";view.textContent="Άνοιγμα απάντησης / Βαθμός";
+       const details=document.createElement("div");
+       view.onclick=()=>{
+         if(details.childNodes.length){details.replaceChildren();return}
+         const p=learningTextElement("p",answer.answer_text);p.style.whiteSpace="pre-wrap";
+         const feedback=document.createElement("textarea");feedback.className="chatTextarea";feedback.maxLength=6000;
+         feedback.placeholder="Σχόλιο / διορθώσεις";feedback.value=answer.feedback||"";
+         const score=document.createElement("input");score.type="number";score.min="0";score.max="100";score.step=".25";
+         score.placeholder="Βαθμός";score.value=answer.score??"";
+         const max=document.createElement("input");max.type="number";max.min="1";max.max="100";max.step=".25";
+         max.value=answer.max_score??20;
+         const button=document.createElement("button");button.type="button";button.textContent="Αποθήκευση βαθμού";
+         const msg=learningTextElement("p","","learningHint");
+         details.append(p,learningTextElement("label","Βαθμός"),score,
+           learningTextElement("label","Με άριστα"),max,learningTextElement("label","Σχόλια"),feedback,button,msg);
+         button.onclick=async()=>{
+           const n=Number(score.value),limit=Number(max.value);
+           if(!score.value||!max.value||!Number.isFinite(n)||!Number.isFinite(limit)||n<0||limit<=0||limit>100||n>limit){
+             msg.textContent="Συμπλήρωσε έγκυρο βαθμό μέχρι το άριστα (100).";return;
+           }
+           button.disabled=true;
+           try{
+             const auth=await supabase.auth.getUser();if(auth.error)throw auth.error;
+             const r=await supabase.from("mathlab_school_submissions")
+               .update({score:n,max_score:limit,feedback:feedback.value,
+                 reviewed_by:auth.data.user.id,reviewed_at:new Date().toISOString()})
+               .eq("id",answer.id).eq("school_id",mlTenantSchoolId).select("id").single();
+             if(r.error)throw r.error;
+             answer.score=n;answer.max_score=limit;answer.feedback=feedback.value;
+             msg.textContent="✓ Ο βαθμός αποθηκεύτηκε και εμφανίζεται στον μαθητή.";
+           }catch(e){msg.textContent="Δεν αποθηκεύτηκε: "+(e?.message||String(e))}
+           finally{button.disabled=false}
+         };
+       };
+       card.append(view,details);
+       if(answer.score!=null)card.append(learningTextElement("p","Βαθμός: "+answer.score+" / "+answer.max_score));
+     }
+     list.append(card);
+   }
+ }
+ $("mlTenantRefreshAssignments").onclick=()=>refresh().catch(e=>status.textContent=e.message);
+ try{await refresh()}catch(e){status.textContent="Δεν φορτώθηκαν οι εργασίες: "+(e?.message||String(e))}
+}
+async function mlTenantStudentLessonsView(){
+ const root=$("view");
+ root.innerHTML='<div class="card"><h2>Οι εργασίες μου</h2>'+
+ '<p id="mlStudentTenantStatus" role="status">Φόρτωση...</p><div id="mlStudentTenantList"></div></div>';
+ const status=$("mlStudentTenantStatus"),list=$("mlStudentTenantList");
+ try{
+   const auth=await supabase.auth.getUser();if(auth.error)throw auth.error;
+   const student=await supabase.from("mathlab_school_students")
+     .select("id").eq("school_id",mlTenantSchoolId).eq("user_id",auth.data.user.id).single();
+   if(student.error)throw student.error;
+   const assignments=await supabase.from("mathlab_school_assignments")
+     .select("id,lesson_id,due_date").eq("school_id",mlTenantSchoolId).eq("student_id",student.data.id);
+   if(assignments.error)throw assignments.error;
+   if(!list.isConnected)return;list.replaceChildren();
+   if(!assignments.data?.length){status.textContent="Δεν έχουν ανατεθεί ακόμη εργασίες.";return}
+   const ids=assignments.data.map(a=>a.lesson_id);
+   const aids=assignments.data.map(a=>a.id);
+   const [lessons,files,submissions]=await Promise.all([
+     supabase.from("mathlab_school_lessons").select("id,title,description,published")
+       .eq("school_id",mlTenantSchoolId).eq("published",true).in("id",ids),
+     supabase.from("mathlab_school_files").select("id,lesson_id,original_name,storage_path,mime_type")
+       .eq("school_id",mlTenantSchoolId).in("lesson_id",ids),
+     supabase.from("mathlab_school_submissions").select("assignment_id,answer_text,score,max_score,feedback")
+       .eq("school_id",mlTenantSchoolId).in("assignment_id",aids)
+   ]);
+   for(const res of [lessons,files,submissions])if(res.error)throw res.error;
+   const lm=new Map((lessons.data||[]).map(l=>[l.id,l]));
+   const answers=new Map((submissions.data||[]).map(l=>[l.assignment_id,l]));
+   status.textContent="Άνοιξε μια εργασία για να δεις την εκφώνηση και να υποβάλεις την απάντησή σου.";
+   for(const assigned of assignments.data){
+     const lesson=lm.get(assigned.lesson_id);if(!lesson)continue;
+     const previous=answers.get(assigned.id),card=document.createElement("section");card.className="learningCard";
+     card.append(mlTenantCardHeading(lesson.title));
+     if(assigned.due_date)card.append(learningTextElement("p","Προθεσμία: "+assigned.due_date,"learningHint"));
+     card.append(learningTextElement("p",previous?"✓ Παραδόθηκε":"Δεν έχει παραδοθεί","learningHint"));
+     if(previous?.score!=null)card.append(learningTextElement("p","Βαθμός: "+previous.score+" / "+previous.max_score));
+     if(previous?.feedback)card.append(learningTextElement("p","Σχόλιο καθηγητή: "+previous.feedback));
+     const open=document.createElement("button");open.type="button";open.className="alt";open.textContent="Άνοιγμα εργασίας";
+     open.onclick=()=>{
+       const screen=learningOpenWorkspace(lesson.title);
+       const box=document.createElement("div");box.className="learningCard";
+       box.append(learningTextElement("h3",lesson.title));
+       const instructions=learningTextElement("p",lesson.description||"");
+       instructions.style.whiteSpace="pre-wrap";box.append(instructions);
+       const items=(files.data||[]).filter(f=>f.lesson_id===lesson.id);
+       for(const file of items){
+         const b=document.createElement("button");b.type="button";b.className="alt";
+         b.textContent="📎 "+file.original_name;
+         const pane=document.createElement("div");
+         b.onclick=async()=>{
+           if(pane.hasChildNodes()){pane.replaceChildren();return}
+           b.disabled=true;pane.textContent="Άνοιγμα αρχείου...";
+           try{
+             const fetched=await supabase.storage.from(mlTenantBucket).download(file.storage_path);
+             if(fetched.error)throw fetched.error;
+             const ext=learningExt(file.original_name);
+             pane.replaceChildren();
+             if(ext==="pdf")await learningRenderWritablePdf(pane,fetched.data,{});
+             else if(["png","jpg","jpeg","webp","gif"].includes(ext)){
+               const image=document.createElement("img");image.alt=file.original_name;
+               const url=URL.createObjectURL(fetched.data);image.src=url;
+               image.onload=()=>URL.revokeObjectURL(url);
+               learningCreateImageZoom(pane,image);
+             }else pane.textContent="Προεπισκόπηση μη διαθέσιμη για αυτόν τον τύπο. Ζήτησε PDF ή φωτογραφία από τον καθηγητή.";
+           }catch(e){pane.textContent="Δεν άνοιξε το αρχείο: "+(e?.message||String(e))}
+           finally{b.disabled=false}
+         };
+         box.append(b,pane);
+       }
+       box.append(learningTextElement("h4","Η απάντησή μου"));
+       const answer=document.createElement("textarea");answer.className="chatTextarea";
+       answer.maxLength=30000;answer.rows=8;
+       answer.value=previous?.answer_text||"";
+       box.append(answer);learningCreateMathKeyboard(box,()=>answer);
+       if(previous){
+         box.append(learningTextElement("p","Η εργασία έχει υποβληθεί. Για αλλαγές επικοινώνησε με τον καθηγητή.","learningHint"));
+         answer.disabled=true;
+       }else{
+         const send=document.createElement("button");send.type="button";send.textContent="📤 Υποβολή εργασίας";
+         const msg=learningTextElement("p","","learningHint");
+         send.onclick=async()=>{
+           if(answer.value.trim().length<1){msg.textContent="Γράψε πρώτα την απάντησή σου.";return}
+           send.disabled=true;msg.textContent="Αποστολή απάντησης...";
+           try{
+             const result=await supabase.from("mathlab_school_submissions").insert({
+               school_id:mlTenantSchoolId,assignment_id:assigned.id,student_id:student.data.id,answer_text:answer.value
+             }).select("id").single();
+             if(result.error)throw result.error;
+             msg.textContent="✓ Η εργασία υποβλήθηκε στον καθηγητή.";
+             answer.disabled=true;send.remove();
+           }catch(e){msg.textContent="Δεν υποβλήθηκε: "+(e?.message||String(e));send.disabled=false}
+         };
+         box.append(send,msg);
+       }
+       screen.content.append(box);
+     };
+     card.append(open);list.append(card);
+   }
+ }catch(error){status.textContent="Δεν φορτώθηκαν οι εργασίες: "+(error?.message||String(error))}
+}
+async function mlTenantRouter(tab){
+ if(!mlTenantSchoolId){$("view").textContent="Δεν βρέθηκε σχολή για αυτόν τον λογαριασμό.";return}
+ const routes={
+  tenantHome:mlTenantHomeView,
+  tenantStudents:mlTenantStudentsView,
+  tenantLessons:mlTenantLessonsView,
+  tenantAssignments:mlTenantAssignmentsView,
+  tenantStudentLessons:mlTenantStudentLessonsView,
+  settings:mlSettingsView
+ };
+ const fn=routes[tab]||mlTenantHomeView;
+ if(mlTenantRole==="student"&&!["tenantStudentLessons","settings"].includes(tab))return;
+ if(mlTenantRole!=="student"&&tab==="tenantStudentLessons")return;
+ await fn();mlApplyLanguage();
+}
+
 async function view(table){if(table==="notifications")return mlNotificationsView();if(table==="settings")return mlSettingsView();if(table==="assignments")return learningAdminAssignmentsView();if(table==="grades")return learningAdminGradesView();if(table==="learning")return learningAdminView();if(table==="messages")return messagesView();if(table==="invites")return invitesView();if(table==="students")return studentsView();if(table==="calendar")return calendarView();$("view").innerHTML='<div class="card">Φόρτωση...</div>';let {data,error}=await supabase.from(table).select("*").limit(100);if(error){$("view").innerHTML='<div class="card">'+escapeHtml(error.message)+'</div>';return}const fields=tabs[table][1];$("view").innerHTML='<div class="card"><h2>'+tabs[table][0]+'</h2><div class="scroll"><table><thead><tr>'+fields.map(f=>'<th>'+escapeHtml(f)+'</th>').join("")+'</tr></thead><tbody>'+data.map(r=>'<tr>'+fields.map(f=>'<td>'+escapeHtml(r[f])+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>'+(data.length?'':'<p class="muted">Δεν υπάρχουν καταχωρίσεις.</p>')+'</div>'}async function start(signedInUser){
  try{
   let user=signedInUser;
