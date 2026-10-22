@@ -196,7 +196,7 @@ const mlMenuEnglish={
  calendar:"Calendar",students:"Students",classes:"Classes",attendance:"Attendance",
  assignments:"Assignments",grades:"Grades",invoices:"Tuition",announcements:"Announcements",
  studentCalendar:"Calendar",studentMessages:"Messages",studentGrades:"My grades",studentLessons:"My lessons",
- notifications:"Notifications",settings:"Settings",tenantHome:"Home",tenantStudents:"My students",tenantLessons:"Lessons",tenantAssignments:"Assignments",tenantStudentLessons:"My assignments"
+ notifications:"Notifications",settings:"Settings",tenantHome:"Home",tenantStudents:"My students",tenantLessons:"Lessons",tenantAssignments:"Assignments",tenantMessages:"Messages",tenantStudentLessons:"My assignments"
 };
 const mlCommonEnglish={
  "Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab":"Welcome to the modern MathLab learning center",
@@ -252,7 +252,7 @@ function mlUpdateMenuLanguage(){
  const en=mlCurrentSettings.language==="en";
  for(const button of document.querySelectorAll("#nav [data-tab]")){
    const id=button.dataset.tab;
-   const tenantGreek={tenantHome:"Αρχική",tenantStudents:"Οι μαθητές μου",tenantLessons:"Μαθήματα",tenantAssignments:"Εργασίες",tenantStudentLessons:"Οι εργασίες μου"};
+   const tenantGreek={tenantHome:"Αρχική",tenantStudents:"Οι μαθητές μου",tenantLessons:"Μαθήματα",tenantAssignments:"Εργασίες",tenantMessages:"Μηνύματα",tenantStudentLessons:"Οι εργασίες μου"};
    const greek=id in tenantGreek?tenantGreek[id]:id==="settings"?"Ρυθμίσεις":id==="notifications"?"Ειδοποιήσεις":id.startsWith("student")?
      ({studentCalendar:"Ημερολόγιο",studentMessages:"Μηνύματα",studentGrades:"Οι βαθμοί μου",studentLessons:"Τα μαθήματά μου"}[id]||id)
      :(tabs[id]?.[0]||id);
@@ -266,7 +266,7 @@ function mlUpdateMenuLanguage(){
  if(menuLabel)menuLabel.textContent=en?"Menu":"Μενού";
  if($("dashboard")&&!$("dashboard").classList.contains("hide")){
    const heading=$("dashboard").querySelector("h1");
-   if(heading)heading.textContent=profile?.role==="admin"?(en?"Welcome to your own modern MathLab learning center":"Καλώς ήρθες στο δικό σου σύγχρονο φροντιστήριο MathLab"):(en?"Welcome to the modern MathLab learning center":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab");
+   if(heading)mlApplyWelcome();
  }
 }
 function mlApplyLanguage(){
@@ -375,7 +375,49 @@ async function mlSettingsView(){
 let profile=null;let claimedInvite=false;
 const inviteToken=new URLSearchParams(location.search).get("invite")||"";
 const schoolInviteToken=new URLSearchParams(location.search).get("school_invite")||"";
-let mlTenantSchoolId=null,mlTenantRole=null,mlTenantSchoolName="",mlTenantTeacherName="";
+let mlTenantSchoolId=null,mlTenantRole=null,mlTenantSchoolName="",mlTenantTeacherName="",mlLegacyTeacherName="";
+function mlFirstName(name){
+  const words=String(name||"").trim().split(/\s+/);
+  return words[0]||"φίλε μου";
+}
+function mlTeacherDisplay(){
+  if(mlTenantSchoolId)return mlTenantTeacherName||"ο καθηγητής σου";
+  return mlLegacyTeacherName||"ο καθηγητής σου";
+}
+function mlTeacherPhrase(text,asHtml=false){
+ const name=asHtml?escapeHtml(mlTeacherDisplay()):mlTeacherDisplay();
+ return String(text||"")
+  .replace(/της κυρίας Φωτεινής/g,"του/της εκπαιδευτικού "+name)
+  .replace(/την κυρία Φωτεινή/g,"τον/την εκπαιδευτικό "+name)
+  .replace(/η κυρία Φωτεινή/g,"ο/η εκπαιδευτικός "+name)
+  .replace(/κυρίας Φωτεινής/g,"εκπαιδευτικού "+name)
+  .replace(/κυρία Φωτεινή/g,"εκπαιδευτικό "+name)
+  .replace(/Φωτεινή/g,name);
+}
+function mlApplyWelcome(){
+ const dashboard=$("dashboard");
+ if(!dashboard||dashboard.classList.contains("hide")||!profile)return;
+ const el=dashboard.querySelector(".mathlabWelcome h1"),sub=$("profile");
+ if(!el||!sub)return;
+ const english=mlCurrentSettings.language==="en";
+ const name=mlFirstName(profile.full_name);
+ if(profile.role==="teacher"&&mlTenantSchoolId){
+   el.textContent=english?"Welcome, "+name+", to MathLab":"Καλώς ήρθες, "+name+", στο MathLab";
+   sub.textContent=english?"Your learning center: "+mlTenantSchoolName:"Το φροντιστήριό σου: "+mlTenantSchoolName;
+ }else if(profile.role==="admin"){
+   el.textContent=english?"Welcome, "+name+", to your own modern MathLab learning center":
+    "Καλώς ήρθες, "+name+", στο δικό σου σύγχρονο φροντιστήριο MathLab";
+   sub.textContent=profile.full_name;
+ }else if(profile.role==="student"&&mlTenantSchoolId){
+   el.textContent=english?"Welcome, "+name+", to MathLab":"Καλώς ήρθες, "+name+", στο MathLab";
+   sub.textContent=mlTenantSchoolName+" · "+mlTenantTeacherName;
+ }else{
+   el.textContent=english?"Welcome, "+name+", to the modern MathLab learning center":
+    "Καλώς ήρθες, "+name+", στο σύγχρονο φροντιστήριο MathLab";
+   sub.textContent=profile.full_name;
+ }
+}
+
 let mlClaimedSchoolInvite=false;function screen(id){for(let a of ["auth","dashboard","recovery","invitePanel","teacherSignupPanel","schoolInvitePanel"])$(a).classList.toggle("hide",a!==id);$("menuToggle")?.classList.toggle("hide",id!=="dashboard");if(id!=="dashboard")$("nav")?.classList.remove("open")}const tabs={notifications:["Ειδοποιήσεις",[]],settings:["Ρυθμίσεις",[]],learning:["Εκπαιδευτικό υλικό",[]],messages:["Μηνύματα",[]],invites:["Προσκλήσεις",[]],calendar:["Ημερολόγιο",[]],students:["Μαθητές",["full_name","grade"]],classes:["Τμήματα",["name","weekday","starts_at","ends_at"]],attendance:["Απουσίες",["session_date","status"]],assignments:["Εργασίες",["title","due_date"]],grades:["Βαθμολογίες",["title","score","max_score"]],invoices:["Δίδακτρα",["period","amount","paid_amount"]],announcements:["Ανακοινώσεις",["title","body"]]};let studentToken="";async function studentApi(method,params="",payload){if(!studentToken)throw new Error("Η σύνδεση χρειάζεται ανανέωση. Κάνε είσοδο ξανά.");const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);try{const res=await fetch("https://terlbwqcmrfsjhagtxch.supabase.co/rest/v1/students"+params,{method,headers:{"apikey":"sb_publishable_-v9E4RXTp2VBKsCiGjcQ3A_d3kJmdJ0","Authorization":"Bearer "+studentToken,"Content-Type":"application/json","Prefer":method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation"},body:payload?JSON.stringify(payload):undefined,signal:ctl.signal});let body=await res.json().catch(()=>null);if(!res.ok)throw new Error((body?.message||body?.details||body?.hint||"HTTP "+res.status)+" (HTTP "+res.status+")");return body||[]}catch(e){if(e.name==="AbortError")throw new Error("Η επικοινωνία με τη βάση ξεπέρασε τα 10 δευτερόλεπτα.");throw e}finally{clearTimeout(timer)}}let studentRecords=[];const levels={primary:"Δημοτικό",middle:"Γυμνάσιο",high:"Λύκειο"};function studentList(q=""){const rows=studentRecords.filter(s=>[s.full_name,s.grade,levels[s.level],s.phone||""].join(" ").toLocaleLowerCase("el").includes(q.toLocaleLowerCase("el")));$("studentRows").innerHTML=rows.map(s=>'<tr><td>'+escapeHtml(s.full_name)+'</td><td>'+escapeHtml(levels[s.level])+'</td><td>'+escapeHtml(s.grade)+'</td><td>'+escapeHtml(s.phone||"—")+'</td><td>'+(s.monthly_tuition==null?"—":Number(s.monthly_tuition).toLocaleString("el-GR",{style:"currency",currency:"EUR"}))+'</td><td>'+escapeHtml(s.email||"—")+'</td><td>'+(s.user_id?"Ενεργός":"Δεν έχει ενεργοποιηθεί")+'</td><td><button class="alt" data-edit-student="'+escapeHtml(s.id)+'">Επεξεργασία</button><button type="button" class="danger" data-delete-student="'+escapeHtml(s.id)+'">Διαγραφή</button></td></tr>').join("")||'<tr><td colspan="8">Δεν βρέθηκαν μαθητές.</td></tr>'}function studentForm(s){const id=s?.id||"";return '<div class="card" id="studentEditor"><h2>'+(id?'Επεξεργασία μαθητή':'Νέος μαθητής')+'</h2><form id="studentForm"><input type="hidden" name="id" value="'+escapeHtml(id)+'"><label>Ονοματεπώνυμο</label><input name="full_name" required maxlength="150" value="'+escapeHtml(s?.full_name||"")+'"><label>Βαθμίδα</label><select name="level" required>'+Object.entries(levels).map(([v,t])=>'<option value="'+v+'" '+(s?.level===v?'selected':'')+'>'+t+'</option>').join("")+'</select><label>Τάξη</label><input name="grade" maxlength="60" required value="'+escapeHtml(s?.grade||"")+'" placeholder="π.χ. Β΄ Γυμνασίου"><label>Κινητό</label><input name="phone" type="tel" maxlength="30" value="'+escapeHtml(s?.phone||"")+'"><label>Μηνιαία δίδακτρα (€)</label><input name="monthly_tuition" type="number" min="0" step="0.01" inputmode="decimal" placeholder="π.χ. 80" value="'+escapeHtml(s?.monthly_tuition??"")+'"><label><input type="checkbox" name="active" style="width:auto" '+(s?.active!==false?'checked':'')+'> Ενεργός μαθητής</label><p><button type="button" id="saveStudentBtn">Αποθήκευση</button> <button type="button" class="alt" id="cancelStudent">Ακύρωση</button></p><p id="studentStatus" role="status"></p></form></div>'}async function studentsView(){ $("view").innerHTML='<div class="card">Φόρτωση μαθητών...</div>';let data;try{const answer=await supabase.from("students").select("id,full_name,level,grade,active,phone,monthly_tuition,email,user_id").order("full_name");if(answer.error)throw answer.error;data=answer.data||[]}catch(error){$("view").innerHTML='<div class="card">Δεν φορτώθηκαν οι μαθητές: '+escapeHtml(error.message)+'</div>';return}studentRecords=data||[];$("view").innerHTML='<div class="card"><h2>Μαθητές ('+studentRecords.length+')</h2><p id="savedStudentNames" class="muted">Αποθηκευμένοι: '+studentRecords.map(s=>escapeHtml(s.full_name)+(s.active===false?" (ανενεργός)":"")).join(", ")+'</p>'+(profile?.role==="admin"?'<button id="addStudent">+ Προσθήκη μαθητή</button>':'')+'<label for="studentSearch">Αναζήτηση μαθητή</label><input id="studentSearch" placeholder="Όνομα ή τάξη"><div class="scroll"><table><thead><tr><th>Ονοματεπώνυμο</th><th>Βαθμίδα</th><th>Τάξη</th><th>Κινητό</th><th>Δίδακτρα/μήνα</th><th>Email</th><th>Λογαριασμός</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div></div><div id="deleteStudentStatus" class="card hide" role="status"></div><div id="studentFormSlot"></div>';studentList()}$("view").addEventListener("input",e=>{if(e.target.id==="studentSearch")studentList(e.target.value)});$("view").addEventListener("click",e=>{if(e.target.id==="addStudent")$("studentFormSlot").innerHTML=studentForm(null);if(e.target.id==="cancelStudent")$("studentFormSlot").innerHTML="";if(e.target.dataset.editStudent&&profile?.role==="admin"){let s=studentRecords.find(x=>x.id===e.target.dataset.editStudent);if(s){$("studentFormSlot").innerHTML=studentForm(s);$("studentEditor").scrollIntoView({behavior:"smooth"})}}});
 
 let deletingStudent=false;
@@ -3805,10 +3847,16 @@ async function view(table){if(table==="notifications")return mlNotificationsView
   profile=result.data;
   const hasTenant=profile.role==="teacher"||profile.role==="student"?
     await mlTenantLookup(user):false;
+  if(!hasTenant&&["admin","student"].includes(profile.role)){
+    try{
+      const legacy=await supabase.rpc("mathlab_legacy_teacher_display");
+      if(legacy.error)throw legacy.error;
+      mlLegacyTeacherName=String(legacy.data||"").trim()||"ο καθηγητής σου";
+    }catch(error){console.warn("Εμφάνιση καθηγητή:",error?.message||error)}
+  }
   screen("dashboard");
   $("nav").classList.remove("open");$("menuBackdrop").classList.add("hide");document.body.classList.remove("menuOpen");$("menuToggle").setAttribute("aria-expanded","false");
-  $("dashboard").querySelector("h1").textContent=profile.role==="admin"?"Καλώς ήρθες στο δικό σου σύγχρονο φροντιστήριο MathLab":"Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab";
-  $("profile").textContent=profile.full_name||user.email||"Χρήστης";
+  mlApplyWelcome();
   const teacherTabs=[
     ["tenantHome",["Αρχική",[]]],["tenantStudents",["Οι μαθητές μου",[]]],
     ["tenantLessons",["Μαθήματα",[]]],["tenantAssignments",["Εργασίες",[]]],
@@ -4002,4 +4050,4 @@ $("mlSchoolStudentSignupForm").onsubmit=async event=>{
  finally{button.disabled=false}
 };
 
-$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{mlStopNotifications();mlTenantSchoolId=null;mlTenantRole=null;mlTenantSchoolName="";mlTenantTeacherName="";mlSettingsUserId=null;mlCurrentSettings={...mlDefaultSettings};mlApplyAppearance(mlCurrentSettings);await supabase.auth.signOut();profile=null;screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});document.addEventListener("visibilitychange",()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge();if(!document.hidden)mlRefreshNotifications()});setInterval(()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()},60000);start();</script></body></html>
+$("loginForm").onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;$("message").textContent="Σύνδεση...";try{const result=await Promise.race([supabase.auth.signInWithPassword({email:$("email").value,password:$("password").value}),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η σύνδεση καθυστέρησε. Έλεγξε τη σύνδεση στο διαδίκτυο.")),15000))]);if(result.error)throw result.error;$("message").textContent="Επιτυχής έλεγχος κωδικού. Φόρτωση...";studentToken=result.data.session?.access_token||studentToken;await start(result.data.user)}catch(err){$("message").textContent="Σφάλμα σύνδεσης: "+(err?.message||"Δοκίμασε ξανά.")}finally{if(submit)submit.disabled=false}};$("forgot").onclick=async()=>{if(!$("email").value){$("message").textContent="Συμπλήρωσε το email σου.";return}const{error}=await supabase.auth.resetPasswordForEmail($("email").value,{redirectTo:location.origin+location.pathname});$("message").textContent=error?error.message:"Αν υπάρχει λογαριασμός, θα λάβεις email επαναφοράς."};$("passwordForm").onsubmit=async e=>{e.preventDefault();const{error}=await supabase.auth.updateUser({password:$("newPassword").value});$("recoveryMessage").textContent=error?error.message:"Ο κωδικός αποθηκεύτηκε.";if(!error)start()};$("logout").onclick=async()=>{mlStopNotifications();mlTenantSchoolId=null;mlTenantRole=null;mlTenantSchoolName="";mlTenantTeacherName="";mlLegacyTeacherName="";mlSettingsUserId=null;mlCurrentSettings={...mlDefaultSettings};mlApplyAppearance(mlCurrentSettings);await supabase.auth.signOut();profile=null;screen("auth")};supabase.auth.onAuthStateChange((event,session)=>{if(session?.access_token)studentToken=session.access_token;if(event==="PASSWORD_RECOVERY")screen("recovery")});document.addEventListener("visibilitychange",()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge();if(!document.hidden)mlRefreshNotifications()});setInterval(()=>{if(!document.hidden&&profile?.role==="admin")refreshMessageBadge()},60000);start();</script></body></html>
