@@ -344,6 +344,13 @@ async function mlSettingsView(){
   '<div class="learningInline"><input id="mlFontSize" type="range" min="14" max="22" step="1" style="flex:1;width:auto;margin:8px"><span id="mlFontSizeLabel"></span></div>'+
   '<label for="mlLanguage">Γλώσσα εφαρμογής</label><select id="mlLanguage"></select>'+
   '<button type="submit" id="mlSaveAppearance">Αποθήκευση ρυθμίσεων</button><p id="mlAppearanceStatus" role="status"></p></form></div>'+
+  '<div class="card"><h2>Το όνομά μου</h2>'+
+  '<p class="learningHint">Αυτό το όνομα θα εμφανίζεται στο προσωπικό σου καλωσόρισμα και στις συνομιλίες του MathLab.</p>'+
+  '<form id="mlDisplayNameForm">'+
+  '<label for="mlDisplayName">Όνομα ή ονοματεπώνυμο</label>'+
+  '<input id="mlDisplayName" type="text" minlength="2" maxlength="120" autocomplete="name" required>'+
+  '<button id="mlSaveDisplayName" type="submit">Αποθήκευση ονόματος</button>'+
+  '<p id="mlDisplayNameStatus" role="status"></p></form></div>'+
   '<div class="card"><h2>Αλλαγή κωδικού</h2><form id="mlChangePassword">'+
   '<label for="mlPassword1">Νέος κωδικός</label>'+
   '<input id="mlPassword1" type="password" minlength="12" autocomplete="new-password" required>'+
@@ -359,6 +366,29 @@ async function mlSettingsView(){
   '<div class="card"><h2>🖥 Εμφάνιση σε διαδραστικό πίνακα</h2>'+
   '<p class="learningHint">Μεγαλύτερα κουμπιά και πλήρης οθόνη, εφόσον υποστηρίζεται.</p>'+
   '<button type="button" id="mlBoardModeButton" class="alt">Ενεργοποίηση λειτουργίας πίνακα</button></div>';
+ const displayNameInput=$("mlDisplayName"),displayNameForm=$("mlDisplayNameForm"),
+       displayNameStatus=$("mlDisplayNameStatus"),displayNameSave=$("mlSaveDisplayName");
+ displayNameInput.value=profile.full_name||"";
+ displayNameForm.onsubmit=async event=>{
+   event.preventDefault();
+   const desired=displayNameInput.value.trim();
+   if(desired.length<2||desired.length>120){
+     displayNameStatus.textContent="Το όνομα χρειάζεται 2 έως 120 χαρακτήρες.";
+     return;
+   }
+   displayNameSave.disabled=true;displayNameStatus.textContent="Αποθήκευση ονόματος...";
+   try{
+     const result=await supabase.rpc("mathlab_change_my_display_name",{p_full_name:desired});
+     if(result.error)throw result.error;
+     profile.full_name=String(result.data||desired);
+     if(mlTenantSchoolId&&mlTenantRole==="owner")mlTenantTeacherName=profile.full_name;
+     if(profile.role==="admin")mlLegacyTeacherName=profile.full_name;
+     mlApplyWelcome();
+     displayNameStatus.textContent="✓ Το όνομα αποθηκεύτηκε. Το καλωσόρισμα ενημερώθηκε!";
+   }catch(error){
+     displayNameStatus.textContent="Δεν αποθηκεύτηκε το όνομα: "+(error?.message||String(error));
+   }finally{displayNameSave.disabled=false}
+ };
  $("mlOpenIssueReport").onclick=()=>mlSupportReportForm($("mlIssueReportArea"));
  const boardButton=$("mlBoardModeButton");
  const boardLabel=()=>boardButton.textContent=document.body.classList.contains("mlBoardMode")?
