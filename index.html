@@ -164,7 +164,14 @@ body.mlBoardMode main{max-width:98vw}
 body.mlBoardMode .sideMenu{width:min(440px,90vw)}
 body.mlBoardMode button,body.mlBoardMode select{min-height:54px;font-size:max(19px,1em)}
 body.mlBoardMode .learningMathSymbols button{min-width:58px;min-height:54px;font-size:23px}
-</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span class="mathlabBrand">MathLab</span><button type="button" id="mlNotificationBell" class="alt hide" aria-label="Ειδοποιήσεις" title="Ειδοποιήσεις">🔔 <span id="mlNotificationCount" class="mlNotificationCount hide"></span></button></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Δοκιμαστικό περιβάλλον φροντιστηρίου μαθηματικών</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button>Σύνδεση</button></form><button class="alt" id="forgot">Ξέχασα τον κωδικό μου</button><button type="button" class="alt" id="mlOpenTeacherSignup">Είμαι καθηγητής — Δημιουργία δικού μου φροντιστηρίου</button><p id="message" role="status"></p></div><div id="teacherSignupPanel" class="card hide">
+
+/* Clearly separated teacher/student entry buttons; retain existing MathLab palette. */
+.mlAccountChoices{display:flex;flex-direction:column;gap:10px;margin:18px 0 8px;max-width:520px}
+.mlAccountChoices .mlAccountChoice{display:block;width:100%;text-align:left;min-height:56px;padding:14px 19px;margin:0;font-size:17px;font-weight:700;border:2px solid var(--ml-border,#ead9e5)}
+.mlAccountChoices .mlAccountChoice[aria-pressed="true"]{border-color:var(--ml-accent,#a36a89);background:var(--ml-accent-soft,#f8e9f0)!important;color:var(--ml-text,#61465a)!important}
+#mlTeacherRegisterAction button{width:100%;max-width:520px;margin:4px 0 14px}
+#mlAccountHelp{min-height:22px;margin:8px 0 10px}
+</style></head><body><header class="mathlabHeader"><button type="button" id="menuToggle" class="alt hide" aria-label="Άνοιγμα μενού" aria-expanded="false" aria-controls="nav">☰ <span>Μενού</span></button><span class="mathlabBrand">MathLab</span><button type="button" id="mlNotificationBell" class="alt hide" aria-label="Ειδοποιήσεις" title="Ειδοποιήσεις">🔔 <span id="mlNotificationCount" class="mlNotificationCount hide"></span></button></header><main><div id="auth" class="card"><h1>Καλώς ήρθες στο MathLab</h1><p class="muted">Επίλεξε πώς θέλεις να συνδεθείς.</p><div class="mlAccountChoices" role="group" aria-label="Τύπος λογαριασμού"><button type="button" class="alt mlAccountChoice" id="mlChooseTeacher" aria-pressed="false">👩‍🏫 Είμαι καθηγητής</button><button type="button" class="alt mlAccountChoice" id="mlChooseStudent" aria-pressed="false">🎓 Είμαι μαθητής</button></div><p id="mlAccountHelp" class="learningHint" aria-live="polite"></p><div id="mlTeacherRegisterAction" class="hide"><button type="button" class="alt" id="mlOpenTeacherSignup">+ Δημιουργία δικού μου φροντιστηρίου</button></div><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Κωδικός</label><input id="password" type="password" required autocomplete="current-password"><button type="submit">Σύνδεση</button></form><button class="alt" id="forgot" type="button">Ξέχασα τον κωδικό μου</button><p id="message" role="status"></p></div><div id="teacherSignupPanel" class="card hide">
  <h1>Δημιουργία δικού μου ψηφιακού φροντιστηρίου</h1>
  <p class="learningHint">Κάθε καθηγητής αποκτά ιδιωτικό χώρο με δικούς του μαθητές και μαθήματα. Χρειάζεται επιβεβαίωση email. Πρόκειται για δοκιμαστική έκδοση πριν το Play Store.</p>
  <form id="mlTeacherSignupForm">
@@ -464,19 +471,20 @@ function mlApplyWelcome(){
  const english=mlCurrentSettings.language==="en";
  const name=mlFirstName(profile.full_name);
  if(profile.role==="teacher"&&mlTenantSchoolId){
-   el.textContent=english?"Welcome, "+name+", to MathLab":"Καλώς ήρθες, "+name+", στο MathLab";
+   el.textContent=english?"Welcome, "+name+", to your learning center!":"Καλώς ήρθες, "+name+", στο φροντιστήριό σου!";
    sub.textContent=english?"Your learning center: "+mlTenantSchoolName:"Το φροντιστήριό σου: "+mlTenantSchoolName;
  }else if(profile.role==="admin"){
-   el.textContent=english?"Welcome, "+name+", to your own modern MathLab learning center":
-    "Καλώς ήρθες, "+name+", στο δικό σου σύγχρονο φροντιστήριο MathLab";
-   sub.textContent=profile.full_name+(mlIsCreator?" · Creator MathLab":"");
+   el.textContent=english?"Welcome, "+name+", to your learning center!":"Καλώς ήρθες, "+name+", στο φροντιστήριό σου!";
+   sub.textContent="MathLab"+(mlIsCreator?" · Creator":"");
  }else if(profile.role==="student"&&mlTenantSchoolId){
-   el.textContent=english?"Welcome, "+name+", to MathLab":"Καλώς ήρθες, "+name+", στο MathLab";
+   el.textContent=english?"Welcome, "+name+"!":"Καλώς ήρθες, "+name+"!";
    sub.textContent=mlTenantSchoolName+" · "+mlTenantTeacherName;
+ }else if(profile.role==="student"){
+   el.textContent=english?"Welcome, "+name+"!":"Καλώς ήρθες, "+name+"!";
+   sub.textContent=english?"Your MathLab learning center":"Το φροντιστήριό σου: MathLab";
  }else{
-   el.textContent=english?"Welcome, "+name+", to the modern MathLab learning center":
-    "Καλώς ήρθες, "+name+", στο σύγχρονο φροντιστήριο MathLab";
-   sub.textContent=profile.full_name;
+   el.textContent=english?"Welcome, "+name+"!":"Καλώς ήρθες, "+name+"!";
+   sub.textContent=mlTenantSchoolName||"MathLab";
  }
 }
 
@@ -4210,6 +4218,17 @@ $("inviteExistingLogin").onclick=async()=>{
  }finally{btn.disabled=false}
 }
 ;
+function mlChooseLoginRole(role){
+ const teacher=role==="teacher";
+ $("mlChooseTeacher").setAttribute("aria-pressed",teacher?"true":"false");
+ $("mlChooseStudent").setAttribute("aria-pressed",teacher?"false":"true");
+ $("mlTeacherRegisterAction").classList.toggle("hide",!teacher);
+ $("mlAccountHelp").textContent=teacher?
+  "Έχεις ήδη λογαριασμό καθηγητή; Συνδέσου παρακάτω. Διαφορετικά, δημιούργησε το δικό σου φροντιστήριο.":
+  "Συνδέσου με τον μαθητικό λογαριασμό σου. Για νέα εγγραφή χρειάζεσαι προσωπική πρόσκληση από τον καθηγητή σου.";
+}
+$("mlChooseTeacher").onclick=()=>mlChooseLoginRole("teacher");
+$("mlChooseStudent").onclick=()=>mlChooseLoginRole("student");
 $("mlOpenTeacherSignup").onclick=()=>screen("teacherSignupPanel");
 $("mlBackToLogin").onclick=()=>screen("auth");
 $("mlSchoolInviteExistingLogin").onclick=()=>{screen("auth");$("message").textContent="Συνδέσου με τον λογαριασμό σου. Η πρόσκληση παραμένει ενεργή."};
