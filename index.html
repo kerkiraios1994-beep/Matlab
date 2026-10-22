@@ -196,7 +196,7 @@ const mlMenuEnglish={
  calendar:"Calendar",students:"Students",classes:"Classes",attendance:"Attendance",
  assignments:"Assignments",grades:"Grades",invoices:"Tuition",announcements:"Announcements",
  studentCalendar:"Calendar",studentMessages:"Messages",studentGrades:"My grades",studentLessons:"My lessons",
- notifications:"Notifications",settings:"Settings"
+ notifications:"Notifications",settings:"Settings",tenantHome:"Home",tenantStudents:"My students",tenantLessons:"Lessons",tenantAssignments:"Assignments",tenantStudentLessons:"My assignments"
 };
 const mlCommonEnglish={
  "Καλώς ήρθες στο σύγχρονο φροντιστήριο MathLab":"Welcome to the modern MathLab learning center",
@@ -252,7 +252,8 @@ function mlUpdateMenuLanguage(){
  const en=mlCurrentSettings.language==="en";
  for(const button of document.querySelectorAll("#nav [data-tab]")){
    const id=button.dataset.tab;
-   const greek=id==="settings"?"Ρυθμίσεις":id==="notifications"?"Ειδοποιήσεις":id.startsWith("student")?
+   const tenantGreek={tenantHome:"Αρχική",tenantStudents:"Οι μαθητές μου",tenantLessons:"Μαθήματα",tenantAssignments:"Εργασίες",tenantStudentLessons:"Οι εργασίες μου"};
+   const greek=id in tenantGreek?tenantGreek[id]:id==="settings"?"Ρυθμίσεις":id==="notifications"?"Ειδοποιήσεις":id.startsWith("student")?
      ({studentCalendar:"Ημερολόγιο",studentMessages:"Μηνύματα",studentGrades:"Οι βαθμοί μου",studentLessons:"Τα μαθήματά μου"}[id]||id)
      :(tabs[id]?.[0]||id);
    const badge=button.textContent.match(/ \(\d+ (?:νέα|new)\)$/)?.[0]||"";
@@ -284,7 +285,7 @@ async function mlLoadUserSettings(userId){
  mlApplyAppearance(mlCurrentSettings);mlApplyLanguage();
 }
 async function mlSettingsView(){
- if(!profile||!["admin","student"].includes(profile.role))return;
+ if(!profile||!["admin","student","teacher"].includes(profile.role))return;
  const english=mlCurrentSettings.language==="en",tr=(el,en)=>english?en:el;
  $("view").innerHTML='<div class="card"><h2>Ρυθμίσεις</h2>'+
   '<p class="muted">Οι επιλογές σου αποθηκεύονται στον προσωπικό σου λογαριασμό.</p>'+
@@ -2969,7 +2970,7 @@ function mlUpdateNotificationBadge(){
  if(!bell||!count)return;
  const english=mlCurrentSettings.language==="en";
  const name=english?"Notifications":"Ειδοποιήσεις";
- if(mlNotificationUserId && ["admin","student"].includes(profile?.role))bell.classList.remove("hide");
+ if(mlNotificationUserId && ["admin","student","teacher"].includes(profile?.role))bell.classList.remove("hide");
  const badge=mlNotificationUnreadCount;
  count.textContent=badge>99?"99+":String(badge);
  count.classList.toggle("hide",!badge);
@@ -3052,7 +3053,10 @@ async function mlMarkNotificationRead(record){
 async function mlOpenNotificationTarget(record){
  await mlMarkNotificationRead(record);
  const target=record.target;
- if(profile?.role==="admin"){
+ if(mlTenantSchoolId){
+   const id=mlTenantRole==="student"?"tenantStudentLessons":target==="assignments"?"tenantAssignments":"tenantLessons";
+   setCurrentSection(id);await mlTenantRouter(id);
+ }else if(profile?.role==="admin"){
    const id=target==="assignments"?"assignments":target==="studentGrades"?"grades":"learning";
    setCurrentSection(id);
    await view(id);mlApplyLanguage();
@@ -3593,9 +3597,34 @@ async function view(table){if(table==="notifications")return mlNotificationsView
    studentToken=s.data?.session?.access_token||studentToken;
   }
   if(!user){
-   screen(inviteToken?"invitePanel":"auth");
-   if(!inviteToken)$("message").textContent="Δεν υπάρχει ενεργή σύνδεση. Κάνε είσοδο.";
+   screen(schoolInviteToken?"schoolInvitePanel":inviteToken?"invitePanel":"auth");
+   if(!schoolInviteToken&&!inviteToken)$("message").textContent="Δεν υπάρχει ενεργή σύνδεση. Κάνε είσοδο.";
    return;
+  }
+  if(schoolInviteToken&&!mlClaimedSchoolInvite){
+    const claimed=await supabase.rpc("claim_mathlab_school_student_invite",{p_token:schoolInviteToken});
+    if(claimed.error){
+      screen("schoolInvitePanel");
+      $("mlSchoolInviteStatus").textContent="Δεν ενεργοποιήθηκε η πρόσκληση: "+claimed.error.message+
+        ". Αν δεν έχεις επιβεβαιώσει το email σου, άνοιξε πρώτα το μήνυμα επιβεβαίωσης.";
+      return;
+    }
+    mlClaimedSchoolInvite=true;
+    history.replaceState(null,"",location.origin+location.pathname);
+  }else if(!schoolInviteToken && /^[a-f0-9]{64}$/.test(String(user.user_metadata?.mathlab_school_student_invite||""))){
+    const already=await supabase.from("mathlab_school_members")
+      .select("school_id").eq("user_id",user.id).eq("role","student").limit(1);
+    if(!already.error&&!already.data?.length){
+      const claimed=await supabase.rpc("claim_mathlab_school_student_invite",{
+        p_token:user.user_metadata.mathlab_school_student_invite
+      });
+      if(claimed.error){
+        screen("schoolInvitePanel");
+        $("mlSchoolInviteStatus").textContent="Δεν ενεργοποιήθηκε η πρόσκληση: "+claimed.error.message;
+        return;
+      }
+      mlClaimedSchoolInvite=true;
+    }
   }
   if(inviteToken&&!claimedInvite){
    const p=await supabase.from("profiles").select("role,active").eq("id",user.id).maybeSingle();
@@ -3638,13 +3667,27 @@ async function view(table){if(table==="notifications")return mlNotificationsView
    claimedInvite=true;
    history.replaceState(null,"",location.origin+location.pathname);
   }
-  const result=await Promise.race([
+  let result=await Promise.race([
     supabase.from("profiles").select("full_name,role,active").eq("id",user.id).maybeSingle(),
     new Promise((_,reject)=>setTimeout(()=>reject(new Error("Η φόρτωση του λογαριασμού καθυστέρησε.")),12000))
   ]);
   if(result.error)throw result.error;
+  if(!result.data && user.user_metadata?.mathlab_teacher_signup===true){
+    const meta=user.user_metadata;
+    const created=await supabase.rpc("create_mathlab_school",{
+      p_school_name:String(meta.mathlab_school_name||""),
+      p_teacher_name:String(meta.mathlab_teacher_name||"")
+    });
+    if(created.error){
+      screen("teacherSignupPanel");
+      $("mlTeacherSignupStatus").textContent="Δεν ενεργοποιήθηκε ο προσωπικός χώρος: "+created.error.message;
+      return;
+    }
+    result=await supabase.from("profiles").select("full_name,role,active").eq("id",user.id).maybeSingle();
+    if(result.error)throw result.error;
+  }
   if(!result.data?.active){
-    screen(inviteToken?"invitePanel":"auth");
+    screen(schoolInviteToken?"schoolInvitePanel":inviteToken?"invitePanel":"auth");
     const message="Ο λογαριασμός δεν έχει ακόμη ενεργοποιημένο ρόλο μαθητή.";
     if(inviteToken)$("inviteStatus").textContent=message;
     else $("message").textContent=message;
